@@ -1,11 +1,35 @@
 import { useMemo } from 'react';
-import { Link, NavLink } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { Link, NavLink, useLocation } from 'react-router-dom';
 import { AIMenu } from './Menu';
 import { useAuth } from './AuthGate';
 
+function Tab({ to, end, children }) {
+  return (
+    <NavLink to={to} end={end}>
+      {({ isActive }) => (
+        <>
+          {isActive && <motion.span layoutId="nav-pill" className="nav-pill" transition={{ duration: 0.9, ease: [0.22, 0.61, 0.36, 1] }} />}
+          <span className="nav-t">{children}</span>
+        </>
+      )}
+    </NavLink>
+  );
+}
+
 export default function TopBar({ minimal = false }) {
   const auth = useAuth();
-  const extra = useMemo(() => (auth?.ready ? [{ label: 'יציאה מהחשבון', onSelect: () => auth.signOut() }] : []), [auth?.ready, auth]);
+  useLocation();
+  const extra = useMemo(
+    () =>
+      auth?.ready
+        ? [
+            ...(auth.mfaOn ? [] : [{ label: 'הפעלת אימות דו־שלבי', hint: 'לא חובה', onSelect: () => auth.enrollMfa() }]),
+            { label: 'יציאה מהחשבון', onSelect: () => auth.signOut() },
+          ]
+        : [],
+    [auth?.ready, auth?.mfaOn, auth],
+  );
   return (
     <header className="topbar">
       <div className="topbar-inner">
@@ -18,10 +42,11 @@ export default function TopBar({ minimal = false }) {
           <nav className="topnav" aria-label="ניווט ראשי">
             {auth?.ready && (
               <>
-                <NavLink to="/" end>
+                <Tab to="/" end>
                   מטופלים
-                </NavLink>
-                <NavLink to="/method">השיטה</NavLink>
+                </Tab>
+                <Tab to="/library">ספרייה</Tab>
+                <Tab to="/method">השיטה</Tab>
               </>
             )}
           </nav>

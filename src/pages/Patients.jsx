@@ -2,6 +2,7 @@ import { motion } from 'framer-motion';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Page, { LoadError, Loading } from '../components/Page';
+import Tilt from '../components/Tilt';
 import Enneagram from '../components/viz/Enneagram';
 import WeekRing from '../components/viz/WeekRing';
 import { listPatients } from '../lib/data';
@@ -45,15 +46,15 @@ export default function Patients() {
 
       {rows?.length > 0 && (
         <section className={`dash ${hasTypes ? '' : 'dash-single'}`}>
-          <div className="card dash-card">
+          <Tilt className="card dash-card" max={2}>
             <span className="label">השבוע</span>
             <WeekRing patients={rows} />
-          </div>
+          </Tilt>
           {hasTypes && (
-            <div className="card dash-card">
+            <Tilt className="card dash-card" max={2}>
               <span className="label">מפת האניאגרם של המטופלים</span>
               <Enneagram counts={counts} caption="כל טיפה היא מטופל עם השערת עבודה." />
-            </div>
+            </Tilt>
           )}
         </section>
       )}
@@ -85,6 +86,7 @@ export default function Patients() {
         <ul className="patient-list">
           {shown.map((p, i) => (
             <motion.li key={p.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: Math.min(i, 8) * 0.06 }}>
+              <Tilt className="tilt-row" max={3}>
               <Link to={`/patients/${p.id}`} className="patient-row card">
                 <span className="patient-name">{p.full_name}</span>
                 <span className="patient-next">
@@ -96,6 +98,7 @@ export default function Patients() {
                   {p.open_point || 'אין נקודה פתוחה'}
                 </span>
               </Link>
+              </Tilt>
             </motion.li>
           ))}
         </ul>

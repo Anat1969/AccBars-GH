@@ -17,6 +17,7 @@ import {
   upsertSessionExercise,
 } from '../lib/data';
 import Unfurl from '../components/viz/Unfurl';
+import Suggestions from '../components/Suggestions';
 import { hasDistressSign, REFERRAL } from '../lib/distress';
 import { errText, fmtDate, fromLocalInput, toLocalInput } from '../lib/format';
 
@@ -47,6 +48,7 @@ export default function Session() {
   const [busy, setBusy] = useState(false);
   const saved = useRef(null);
   const savedEx = useRef('');
+  const libKey = useRef(null);
   const timer = useRef();
 
   const load = useCallback(async () => {
@@ -61,6 +63,7 @@ export default function Session() {
       setPatient(pat);
       setExercise(own?.description ?? '');
       savedEx.current = own?.description ?? '';
+      libKey.current = own?.library_key ?? null;
       setPrevEx(prev);
       setPrevNote(prev?.done_note ?? '');
       if (sess.status === 'done') setStep(0);
@@ -105,7 +108,7 @@ export default function Session() {
   const saveExercise = useCallback(async () => {
     const d = exercise.trim();
     if (d === savedEx.current) return;
-    if (d) await upsertSessionExercise({ session_id: sid, patient_id: id, description: d, given_on: s?.session_date });
+    if (d) await upsertSessionExercise({ session_id: sid, patient_id: id, description: d, given_on: s?.session_date, library_key: libKey.current });
     else await deleteSessionExercise(sid);
     savedEx.current = d;
   }, [exercise, sid, id, s?.session_date]);
@@ -270,7 +273,19 @@ export default function Session() {
             </>
           )}
           {cur.key === 'insight' && <TextStep rows={2} value={s.insight} onChange={(v) => change('insight', v)} />}
-          {cur.key === 'exercise' && <TextStep rows={3} value={exercise} onChange={setExercise} onBlur={() => saveExercise().catch(() => toast('לא נשמר.', 'error'))} />}
+          {cur.key === 'exercise' && (
+            <>
+              <TextStep rows={3} value={exercise} onChange={(v) => { libKey.current = null; setExercise(v); }} onBlur={() => saveExercise().catch(() => toast('לא נשמר.', 'error'))} />
+              <Suggestions
+                type={patient.enneagram_type}
+                insight={s.insight}
+                onChoose={(text, key) => {
+                  libKey.current = key;
+                  setExercise(text);
+                }}
+              />
+            </>
+          )}
           {cur.key === 'summary' && (
             <>
               <TextStep rows={2} value={s.summary} onChange={(v) => change('summary', v)} />
