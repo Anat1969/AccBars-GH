@@ -17,6 +17,7 @@ import {
   upsertSessionExercise,
 } from '../lib/data';
 import Unfurl from '../components/viz/Unfurl';
+import BarsPicker from '../components/BarsPicker';
 import Suggestions from '../components/Suggestions';
 import { hasDistressSign, REFERRAL } from '../lib/distress';
 import { errText, fmtDate, fromLocalInput, toLocalInput } from '../lib/format';
@@ -30,7 +31,7 @@ const STEPS = [
   { key: 'next', title: 'סשן הבא', ask: 'מתי נפגשים, ומה נשאר פתוח.' },
 ];
 
-const FIELDS = ['session_date', 'brought', 'discussed', 'insight', 'summary', 'open_points', 'next_session_at', 'goal_ids'];
+const FIELDS = ['session_date', 'brought', 'discussed', 'insight', 'summary', 'open_points', 'next_session_at', 'goal_ids', 'bars'];
 
 export default function Session() {
   const { id, sid } = useParams();
@@ -253,7 +254,8 @@ export default function Session() {
           )}
           {cur.key === 'discussed' && (
             <>
-              <TextStep rows={7} value={s.discussed} onChange={(v) => change('discussed', v)} />
+              <TextStep rows={5} value={s.discussed} onChange={(v) => change('discussed', v)} />
+              <BarsPicker value={s.bars ?? []} onChange={(v) => change('bars', v)} />
               {goals.length > 0 && (
                 <div className="goal-chips" role="group" aria-label="לאיזה יעד הסשן נגע">
                   <span className="label">לאיזה יעד זה נגע</span>

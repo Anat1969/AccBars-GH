@@ -20,6 +20,7 @@ import {
 import Enneagram from '../components/viz/Enneagram';
 import GoalMap from '../components/viz/GoalMap';
 import Journey from '../components/viz/Journey';
+import PatientBars from '../components/PatientBars';
 import { enneagramLabel } from '../lib/enneagram';
 import { errText, fmtDate, fmtWhen } from '../lib/format';
 
@@ -206,6 +207,7 @@ export default function PatientCard() {
           <Journey sessions={sessions} exercises={data.exercises} patientId={id} />
         </section>
       )}
+      {sessions.some((x) => x.bars?.length) && <PatientBars sessions={sessions} />}
 
       <div className="card-grid">
         <section className="card">

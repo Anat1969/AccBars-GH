@@ -14,8 +14,9 @@ import NotFound from './pages/NotFound';
 import Method from './pages/Method';
 import Library from './pages/Library';
 import Home from './pages/Home';
+import Bars from './pages/Bars';
 
-const OPEN = ['/', '/method'];
+const OPEN = ['/', '/method', '/bars'];
 
 export default function App() {
   const location = useLocation();
@@ -38,6 +39,7 @@ export default function App() {
                 <Route path="/" element={<Home />} />
                 <Route path="/patients" element={<Patients />} />
                 <Route path="/method" element={<Method />} />
+                <Route path="/bars" element={<Bars />} />
                 <Route path="/library" element={<Library />} />
                 <Route path="/patients/new" element={<PatientForm />} />
                 <Route path="/patients/:id" element={<PatientCard />} />
