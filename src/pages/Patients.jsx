@@ -2,6 +2,8 @@ import { motion } from 'framer-motion';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Page, { LoadError, Loading } from '../components/Page';
+import Enneagram from '../components/viz/Enneagram';
+import WeekRing from '../components/viz/WeekRing';
 import { listPatients } from '../lib/data';
 import { fmtWhen } from '../lib/format';
 
@@ -22,6 +24,8 @@ export default function Patients() {
   }, [rows, term]);
 
   const next = (rows ?? []).find((r) => r.next_session_at && new Date(r.next_session_at) > new Date());
+  const counts = useMemo(() => (rows ?? []).reduce((m, r) => (r.enneagram_type ? { ...m, [r.enneagram_type]: (m[r.enneagram_type] ?? 0) + 1 } : m), {}), [rows]);
+  const hasTypes = Object.keys(counts).length > 0;
 
   return (
     <Page>
@@ -38,6 +42,21 @@ export default function Patients() {
         </h1>
         {next && <p className="quiet">{fmtWhen(next.next_session_at)}</p>}
       </section>
+
+      {rows?.length > 0 && (
+        <section className={`dash ${hasTypes ? '' : 'dash-single'}`}>
+          <div className="card dash-card">
+            <span className="label">השבוע</span>
+            <WeekRing patients={rows} />
+          </div>
+          {hasTypes && (
+            <div className="card dash-card">
+              <span className="label">מפת האניאגרם של המטופלים</span>
+              <Enneagram counts={counts} caption="כל טיפה היא מטופל עם השערת עבודה." />
+            </div>
+          )}
+        </section>
+      )}
 
       <div className="toolbar">
         <label className="field field-search">

@@ -17,9 +17,12 @@ export default function TopBar({ minimal = false }) {
         {!minimal && (
           <nav className="topnav" aria-label="ניווט ראשי">
             {auth?.ready && (
-              <NavLink to="/" end>
-                מטופלים
-              </NavLink>
+              <>
+                <NavLink to="/" end>
+                  מטופלים
+                </NavLink>
+                <NavLink to="/method">השיטה</NavLink>
+              </>
             )}
           </nav>
         )}

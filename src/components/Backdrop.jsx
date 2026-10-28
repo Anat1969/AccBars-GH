@@ -1,4 +1,5 @@
-import { motion, useReducedMotion } from 'framer-motion';
+import { motion, useMotionValue, useReducedMotion, useSpring, useTransform } from 'framer-motion';
+import { useEffect } from 'react';
 
 // One fern frond with dew, drawn twice: blurred in the depth, sharp in front.
 function Frond({ drops = true }) {
@@ -26,24 +27,49 @@ function Frond({ drops = true }) {
 
 export default function Backdrop() {
   const still = useReducedMotion();
+  const mx = useMotionValue(0);
+  const my = useMotionValue(0);
+  const sx = useSpring(mx, { stiffness: 12, damping: 18 });
+  const sy = useSpring(my, { stiffness: 12, damping: 18 });
+  // three depths move at different speeds: the far layer least, the light most
+  const farX = useTransform(sx, (v) => v * 10);
+  const farY = useTransform(sy, (v) => v * 8);
+  const nearX = useTransform(sx, (v) => v * 22);
+  const nearY = useTransform(sy, (v) => v * 14);
+  const glowX = useTransform(sx, (v) => v * -36);
+  const glowY = useTransform(sy, (v) => v * -24);
+
+  useEffect(() => {
+    if (still) return;
+    const move = (e) => {
+      mx.set(e.clientX / window.innerWidth - 0.5);
+      my.set(e.clientY / window.innerHeight - 0.5);
+    };
+    window.addEventListener('pointermove', move, { passive: true });
+    return () => window.removeEventListener('pointermove', move);
+  }, [still, mx, my]);
+
   const sway = still ? {} : { rotate: [0, 1.2, 0, -0.8, 0], transition: { duration: 26, repeat: Infinity, ease: 'easeInOut' } };
   return (
     <div className="backdrop" aria-hidden="true">
-      <div className="glow glow-a" />
+      <motion.div className="glow glow-a" style={{ x: glowX, y: glowY }} />
       <div className="glow glow-b" />
-      <svg className="fern fern-far" viewBox="0 0 600 820" preserveAspectRatio="xMidYMid slice">
+      <motion.div className="glow glow-c" style={{ x: glowX, y: glowY }} animate={still ? {} : { opacity: [0.35, 0.6, 0.35] }} transition={{ duration: 14, repeat: Infinity, ease: 'easeInOut' }} />
+      <motion.svg className="fern fern-far" viewBox="0 0 600 820" preserveAspectRatio="xMidYMid slice" style={{ x: farX, y: farY, rotate: -14 }}>
         <Frond drops={false} />
-      </svg>
-      <motion.svg className="fern fern-near" viewBox="0 0 600 820" style={{ originX: 0.2, originY: 1 }} animate={sway}>
-        <defs>
-          <radialGradient id="dew" cx="35%" cy="30%" r="70%">
-            <stop offset="0" stopColor="#ffffff" />
-            <stop offset="0.55" stopColor="#fdf8f1" stopOpacity="0.95" />
-            <stop offset="1" stopColor="#e8d6c2" stopOpacity="0.7" />
-          </radialGradient>
-        </defs>
-        <Frond />
       </motion.svg>
+      <motion.div className="fern-near-wrap" style={{ x: nearX, y: nearY }}>
+        <motion.svg className="fern fern-near" viewBox="0 0 600 820" style={{ originX: 0.2, originY: 1 }} animate={sway}>
+          <defs>
+            <radialGradient id="dew" cx="35%" cy="30%" r="70%">
+              <stop offset="0" stopColor="#ffffff" />
+              <stop offset="0.55" stopColor="#fdf8f1" stopOpacity="0.95" />
+              <stop offset="1" stopColor="#e8d6c2" stopOpacity="0.7" />
+            </radialGradient>
+          </defs>
+          <Frond />
+        </motion.svg>
+      </motion.div>
       <div className="grain" />
     </div>
   );
