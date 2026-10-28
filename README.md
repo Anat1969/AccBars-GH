@@ -9,5 +9,19 @@
 - `docs/03-first-screens.md`: מסכים ראשונים
 - `docs/04-claude-code-prompt.md`: פרומפט בנייה ל-Claude Code
 
+## הרצה
+```
+npm install
+npm run dev
+```
+משתני סביבה: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`.
+
+## בדיקה
+```
+npm run build:test
+npm run preview
+npm test
+```
+
 ## הערה
 הריפו ציבורי. אין בו מידע אישי על אנשים.

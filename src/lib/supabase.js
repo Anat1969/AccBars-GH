@@ -1,0 +1,16 @@
+import { createClient } from '@supabase/supabase-js';
+
+const url = import.meta.env.VITE_SUPABASE_URL;
+const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+export const configured = Boolean(url && key);
+export const supabase = configured
+  ? createClient(url, key, { auth: { persistSession: true, autoRefreshToken: true, storageKey: 'accbars-auth' } })
+  : null;
+
+/** Throws the Supabase error so callers can show one clear message. */
+export async function q(promise) {
+  const { data, error } = await promise;
+  if (error) throw error;
+  return data;
+}

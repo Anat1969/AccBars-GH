@@ -1,0 +1,339 @@
+// End-to-end check against `vite preview`, with every Supabase call mocked in memory.
+// Run: npm run build:test && npm run preview & node tests/e2e.cjs
+const { chromium } = require('playwright');
+const fs = require('fs');
+const path = require('path');
+
+const BASE = process.env.BASE || 'http://localhost:4173';
+const SB = 'https://mock.supabase.test';
+const MENU_JS = process.env.AI_MENU_JS; // optional local copy of ai-menu.js
+const SHOTS = path.join(__dirname, 'shots');
+fs.mkdirSync(SHOTS, { recursive: true });
+
+let failures = 0;
+const ok = (cond, name) => {
+  console.log(`${cond ? 'PASS' : 'FAIL'}  ${name}`);
+  if (!cond) failures++;
+};
+
+const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+const USER_ID = '11111111-1111-4111-8111-111111111111';
+const jwt = (aal) => `${b64({ alg: 'HS256', typ: 'JWT' })}.${b64({ sub: USER_ID, role: 'authenticated', aal, amr: [{ method: 'password', timestamp: 1 }], exp: 4102444800 })}.sig`;
+const sessionFor = (aal) => ({
+  access_token: jwt(aal),
+  refresh_token: 'r',
+  token_type: 'bearer',
+  expires_in: 3600,
+  expires_at: 4102444800,
+  user: { id: USER_ID, aud: 'authenticated', role: 'authenticated', email: 'therapist@example.test', factors: [] },
+});
+
+function makeDb() {
+  const uid = () => crypto.randomUUID();
+  return { accbars_patients: [], accbars_goals: [], accbars_sessions: [], accbars_exercises: [], uid };
+}
+
+async function mockSupabase(page, db, log) {
+  await page.route(`${SB}/**`, async (route) => {
+    const req = route.request();
+    const url = new URL(req.url());
+    const method = req.method();
+    const body = req.postData() ? JSON.parse(req.postData()) : null;
+    log.push({ method, path: url.pathname, search: url.search, body });
+    const json = (status, data) => route.fulfill({ status, contentType: 'application/json', body: data === undefined ? '' : JSON.stringify(data) });
+
+    // auth
+    if (url.pathname === '/auth/v1/token') return json(200, sessionFor('aal1'));
+    if (url.pathname === '/auth/v1/logout') return route.fulfill({ status: 204 });
+    if (url.pathname === '/auth/v1/recover') return json(200, {});
+    if (url.pathname === '/auth/v1/user') return json(200, sessionFor('aal1').user);
+    if (url.pathname === '/auth/v1/factors' && method === 'POST')
+      return json(200, { id: 'f1', type: 'totp', totp: { qr_code: 'data:image/svg+xml;utf-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10"/></svg>', secret: 'SECRET', uri: 'otpauth://x' } });
+    if (/\/auth\/v1\/factors\/f1\/challenge$/.test(url.pathname)) return json(200, { id: 'c1', expires_at: 4102444800 });
+    if (/\/auth\/v1\/factors\/f1\/verify$/.test(url.pathname)) return json(200, sessionFor('aal2'));
+
+    // rpc
+    if (url.pathname === '/rest/v1/rpc/accbars_is_allowed') return json(200, true);
+    if (url.pathname === '/rest/v1/rpc/accbars_rotate_token') {
+      const p = db.accbars_patients.find((x) => x.id === body.p_patient);
+      p.share_token = 'b'.repeat(36);
+      return json(200, p.share_token);
+    }
+    if (url.pathname === '/rest/v1/rpc/accbars_patient_view') {
+      const p = db.accbars_patients.find((x) => x.share_token === body.p_token);
+      if (!p) return json(200, []);
+      const s = db.accbars_sessions.filter((x) => x.patient_id === p.id && x.status === 'done' && x.summary).at(-1);
+      const e = db.accbars_exercises.filter((x) => x.patient_id === p.id).at(-1);
+      return json(200, [{ first_name: p.full_name.split(' ')[0], message: s?.summary ?? null, exercise: e?.description ?? null, next_session_at: p.next_session_at }]);
+    }
+
+    // tables
+    const table = url.pathname.replace('/rest/v1/', '');
+    const rows = db[table];
+    if (!rows) return json(404, { message: 'no table' });
+    const filters = [...url.searchParams].filter(([k, v]) => v.startsWith('eq.')).map(([k, v]) => [k, v.slice(3)]);
+    const match = (r) => filters.every(([k, v]) => String(r[k]) === v);
+    const single = (req.headers()['accept'] || '').includes('vnd.pgrst.object');
+    const out = (list) => (single ? json(list.length ? 200 : 406, list[0] ?? { message: 'none' }) : json(200, list));
+
+    if (method === 'GET') return out(rows.filter(match));
+    if (method === 'POST') {
+      const list = Array.isArray(body) ? body : [body];
+      const conflict = url.searchParams.get('on_conflict');
+      const created = list.map((r) => {
+        const existing = conflict && rows.find((x) => x[conflict] === r[conflict]);
+        if (existing) return Object.assign(existing, r);
+        const row = { id: db.uid(), therapist_id: USER_ID, created_at: new Date().toISOString(), ...defaults(table), ...r };
+        rows.push(row);
+        return row;
+      });
+      return out(created);
+    }
+    if (method === 'PATCH') {
+      const hit = rows.filter(match);
+      hit.forEach((r) => Object.assign(r, body));
+      return out(hit);
+    }
+    if (method === 'DELETE') {
+      for (const r of rows.filter(match)) rows.splice(rows.indexOf(r), 1);
+      return json(204);
+    }
+    return json(400, {});
+  });
+}
+
+function defaults(table) {
+  if (table === 'accbars_patients') return { share_token: 'a'.repeat(36), opened_on: '2026-09-15', next_session_at: null, open_point: null };
+  if (table === 'accbars_sessions') return { status: 'draft', session_date: '2026-10-28', risk_ack_at: null };
+  return {};
+}
+
+async function menu(page, label) {
+  await page.locator('ai-menu .logo').click();
+  await page.locator('ai-menu').getByText(label, { exact: true }).first().click();
+}
+
+(async () => {
+  const browser = await chromium.launch();
+  const errors = [];
+
+  // ---------- 1. sign in, enroll second factor ----------
+  {
+    const ctx = await browser.newContext({ locale: 'he-IL' });
+    const page = await ctx.newPage();
+    if (MENU_JS) await page.route('https://appofapp-gh.vercel.app/ai-menu.js', (r) => r.fulfill({ contentType: 'text/javascript', body: fs.readFileSync(MENU_JS, 'utf8') }));
+    const db = makeDb();
+    const log = [];
+    await mockSupabase(page, db, log);
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.goto(BASE);
+    await page.getByLabel('אימייל').fill('therapist@example.test');
+    await page.getByLabel('סיסמה').fill('long-password-1');
+    await page.getByRole('button', { name: 'שחזור סיסמה' }).click();
+    ok(log.some((l) => l.path === '/auth/v1/recover'), 'password recovery request sent');
+    await page.getByRole('button', { name: 'כניסה' }).click();
+    await page.getByText('שכבת הגנה נוספת').waitFor();
+    ok(log.some((l) => l.path === '/auth/v1/token' && l.search.includes('grant_type=password')), 'password sign-in request sent');
+    ok(await page.locator('.qr svg').isVisible(), 'TOTP QR code shown');
+    await page.getByLabel('קוד בן שש ספרות').fill('123456');
+    await page.getByRole('button', { name: 'אישור' }).click();
+    await page.getByText('אין עדיין מטופלים.').waitFor();
+    ok(log.some((l) => l.path.endsWith('/verify') && l.body.code === '123456'), 'TOTP verify request sent with the code');
+    ok(true, 'empty patient list text shown');
+    await page.screenshot({ path: path.join(SHOTS, '01-empty.png'), fullPage: true });
+    await ctx.close();
+  }
+
+  // ---------- 2. main flow, already at aal2 ----------
+  const ctx = await browser.newContext({ locale: 'he-IL', viewport: { width: 1280, height: 900 } });
+  await ctx.addInitScript((s) => localStorage.setItem('accbars-auth', s), JSON.stringify(sessionFor('aal2')));
+  await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: BASE });
+  const page = await ctx.newPage();
+  if (MENU_JS) await page.route('https://appofapp-gh.vercel.app/ai-menu.js', (r) => r.fulfill({ contentType: 'text/javascript', body: fs.readFileSync(MENU_JS, 'utf8') }));
+  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('dialog', (d) => d.accept());
+  const db = makeDb();
+  const log = [];
+  await mockSupabase(page, db, log);
+
+  await page.goto(BASE);
+  await page.getByText('אין עדיין מטופלים.').waitFor();
+  ok(await page.locator('ai-menu .logo').isVisible(), 'A&I logo button in the top bar');
+  ok(!(await page.locator('header >> text=העתקת קישור').first().isVisible().catch(() => false)), 'no loose development buttons in the bar');
+  ok((await page.locator('header a.brand').getAttribute('href')) === '/', 'app name links home');
+
+  // new patient
+  await page.getByRole('link', { name: 'להוסיף מטופל ראשון' }).click();
+  await page.getByLabel('שם מלא').fill('דנה ל.');
+  await page.getByLabel('גיל').fill('38');
+  await page.getByLabel('טלפון, לא מוצג ברשימה').fill('050-0000000');
+  await page.getByLabel('מטפלת אחראית').fill('נועה');
+  await page.getByLabel('טיפוס אניאגרם, השערת עבודה').selectOption('6');
+  await page.getByLabel(/יעדים/).fill('להרגיש פחות לחוצה לפני ישיבות עבודה\nלזהות מתי אני נכנסת לעומס');
+  await page.getByRole('button', { name: 'הוספת המטופל' }).click();
+  await page.getByText('עוד לא נרשם סשן.').waitFor();
+  const insert = log.find((l) => l.method === 'POST' && l.path.endsWith('accbars_patients'));
+  ok(insert && insert.body.full_name === 'דנה ל.' && insert.body.age === 38 && insert.body.enneagram_type === 6, 'patient insert carries the form values');
+  ok(db.accbars_goals.length === 2, 'two goals saved');
+  ok(await page.getByText('6, הנאמן').isVisible(), 'enneagram hypothesis shown on the card');
+  await page.screenshot({ path: path.join(SHOTS, '02-card-empty.png'), fullPage: true });
+
+  // goals: add
+  await page.getByLabel('יעד נוסף').fill('לקבוע זמן קבוע לעצמי בשבוע');
+  await page.getByRole('button', { name: 'הוספה' }).click();
+  await page.getByText('לקבוע זמן קבוע לעצמי בשבוע').waitFor();
+  ok(db.accbars_goals.length === 3, 'goal added');
+
+  // edit mode inside the A&I menu, delete a goal
+  await menu(page, 'מצב עריכה');
+  await page.getByRole('button', { name: 'מחיקת היעד לקבוע זמן קבוע לעצמי בשבוע' }).click();
+  await page.waitForFunction(() => !document.body.innerText.includes('לקבוע זמן קבוע לעצמי בשבוע'));
+  ok(db.accbars_goals.length === 2, 'goal deleted from edit mode');
+  await menu(page, 'סיום עריכה');
+
+  // share link
+  await page.getByRole('button', { name: 'העתקת הקישור למטופל' }).click();
+  const clip = await page.evaluate(() => navigator.clipboard.readText());
+  ok(clip.endsWith('/p/' + 'a'.repeat(36)), 'patient link copied');
+  await menu(page, 'קישור חדש למסך המטופל');
+  await page.waitForTimeout(400);
+  ok(log.some((l) => l.path.endsWith('accbars_rotate_token')), 'rotate token request sent');
+
+  // session
+  await page.getByRole('button', { name: 'סשן חדש' }).click();
+  await page.getByText('מה המטופל מביא היום?').waitFor();
+  ok(db.accbars_sessions.length === 1, 'draft session created');
+  ok(!log.some((l) => l.method === 'DELETE' && l.path.endsWith('accbars_exercises')), 'no exercise delete while none exists');
+  await page.locator('textarea.big-text').fill('עומס לפני ישיבות');
+  await page.getByRole('button', { name: 'הבא', exact: true }).click();
+  await page.getByText('מה קרה בסשן?').waitFor();
+  await page.locator('textarea.big-text').fill('התמקדות בעומס לפני ישיבות.');
+  // distress sign stops the flow
+  await page.locator('textarea.big-text').fill('התמקדות בעומס. אמרה שהיא לא רוצה לחיות ככה.');
+  await page.getByText('עולה כאן סימן אפשרי למצוקה או לסיכון').waitFor();
+  ok(await page.getByRole('button', { name: 'הבא', exact: true }).isDisabled(), 'distress sign blocks the next step');
+  ok(await page.getByText('1201').first().isVisible(), 'referral number shown');
+  await page.getByLabel('בדקתי שאין סכנה מיידית, או הפניתי לגורם מקצועי').click();
+  ok(await page.getByRole('button', { name: 'הבא', exact: true }).isEnabled(), 'acknowledging the referral unblocks');
+  await page.getByRole('button', { name: 'הבא', exact: true }).click();
+  await page.getByText('תובנה אחת שעלתה.').waitFor();
+  await page.locator('textarea.big-text').fill('הלחץ מתחיל לפני הישיבה.');
+  await page.getByRole('button', { name: 'הבא', exact: true }).click();
+  await page.getByText('תרגיל אחד, קטן וברור, לשבוע הקרוב.').waitFor();
+  await page.locator('textarea.big-text').fill('שלוש שורות בבוקר לפני המייל.');
+  await page.getByRole('button', { name: 'הבא', exact: true }).click();
+  await page.getByText('מה המטופל לוקח איתו, במשפט אחד.').waitFor();
+  ok(db.accbars_exercises.length === 1 && db.accbars_exercises[0].description === 'שלוש שורות בבוקר לפני המייל.', 'exercise saved when leaving the step');
+  await page.getByRole('button', { name: 'הבא', exact: true }).click();
+  // finish without summary jumps back
+  await page.getByLabel('נקודה פתוחה לסשן הבא').fill('האם התרגיל של שלוש השורות נשמר');
+  await page.getByLabel('הסשן הבא').fill('2026-11-04T10:00');
+  await page.getByRole('button', { name: 'סיום הסשן' }).click();
+  await page.getByText('מה המטופל לוקח איתו, במשפט אחד.').waitFor();
+  ok(true, 'finish without summary returns to the summary step');
+  await page.locator('textarea.big-text').fill('הלחץ מתחיל לפני הישיבה, ושם אפשר לעצור.');
+  // stepper jumps
+  await page.locator('.stepper .step').nth(5).click();
+  await page.waitForTimeout(1200);
+  await page.evaluate(() => scrollTo(0, 0));
+  await page.screenshot({ path: path.join(SHOTS, '03-session.png') });
+  await page.getByRole('button', { name: 'סיום הסשן' }).click();
+  await page.getByText('הסשן נשמר.').waitFor();
+  await page.locator('.session-item').first().waitFor();
+  const s = db.accbars_sessions[0];
+  ok(s.status === 'done' && s.summary.startsWith('הלחץ מתחיל') && s.insight && s.discussed && s.brought && s.risk_ack_at, 'session saved with every step');
+  const p = db.accbars_patients[0];
+  ok(p.open_point === 'האם התרגיל של שלוש השורות נשמר' && p.next_session_at, 'next session and open point moved to the patient');
+  ok(await page.getByText('נרשמה הפניה').isVisible(), 'referral tag in history');
+
+  // done note on the exercise
+  await page.getByLabel('מה נעשה בפועל').fill('נעשה בשלושה בקרים');
+  await page.getByLabel('מה נעשה בפועל').press('Enter');
+  await page.waitForTimeout(400);
+  ok(db.accbars_exercises[0].done_note === 'נעשה בשלושה בקרים', 'exercise done note saved');
+  await page.evaluate(() => scrollTo(0, 0));
+  await page.screenshot({ path: path.join(SHOTS, '04-card.png') });
+
+  // edit details from the A&I menu
+  await menu(page, 'עריכת פרטי המטופל');
+  await page.getByLabel('גיל').fill('39');
+  await page.getByRole('button', { name: 'שמירה' }).click();
+  await page.getByText('הפרטים נשמרו.').waitFor();
+  ok(db.accbars_patients[0].age === 39, 'details edited');
+
+  // list
+  await page.locator('header a.brand').click();
+  await page.getByText('הסשן הבא:').waitFor();
+  ok(await page.getByText('האם התרגיל של שלוש השורות נשמר').isVisible(), 'open point shown in list');
+  ok(!(await page.getByText('050-0000000').isVisible().catch(() => false)), 'phone hidden in list');
+  await page.getByLabel('חיפוש לפי שם').fill('אין כזה');
+  ok(await page.getByText('אין מטופל בשם הזה.').isVisible(), 'search with no match');
+  await page.getByLabel('חיפוש לפי שם').fill('דנה');
+  ok(await page.locator('.patient-row').count() === 1, 'search by name');
+  await page.screenshot({ path: path.join(SHOTS, '05-list.png'), fullPage: true });
+
+  // patient screen
+  const pv = await ctx.newPage();
+  if (MENU_JS) await pv.route('https://appofapp-gh.vercel.app/ai-menu.js', (r) => r.fulfill({ contentType: 'text/javascript', body: fs.readFileSync(MENU_JS, 'utf8') }));
+  await mockSupabase(pv, db, log);
+  pv.on('pageerror', (e) => errors.push(e.message));
+  await pv.goto(`${BASE}/p/${'b'.repeat(36)}`);
+  await pv.getByText('הלחץ מתחיל לפני הישיבה, ושם אפשר לעצור.').waitFor();
+  ok(await pv.getByText('שלום דנה').isVisible(), 'patient screen greets by first name');
+  ok(await pv.getByText('שלוש שורות בבוקר לפני המייל.').isVisible(), 'patient screen shows the exercise');
+  ok(await pv.getByText(/ער"ן/).isVisible(), 'patient screen shows the care line');
+  await pv.waitForTimeout(1800);
+  await pv.screenshot({ path: path.join(SHOTS, '06-patient.png'), fullPage: true });
+  await pv.goto(`${BASE}/p/${'a'.repeat(36)}`);
+  await pv.getByText('הקישור אינו פעיל').waitFor();
+  ok(true, 'old link is inactive after rotation');
+
+  // mobile: no horizontal scroll on every screen
+  const m = await browser.newContext({ locale: 'he-IL', viewport: { width: 375, height: 760 }, isMobile: true, hasTouch: true });
+  await m.addInitScript((s) => localStorage.setItem('accbars-auth', s), JSON.stringify(sessionFor('aal2')));
+  const mp = await m.newPage();
+  if (MENU_JS) await mp.route('https://appofapp-gh.vercel.app/ai-menu.js', (r) => r.fulfill({ contentType: 'text/javascript', body: fs.readFileSync(MENU_JS, 'utf8') }));
+  await mockSupabase(mp, db, log);
+  mp.on('pageerror', (e) => errors.push(e.message));
+  for (const [name, url, wait] of [
+    ['list', '/', 'דנה ל.'],
+    ['card', `/patients/${p.id}`, 'סשנים'],
+    ['session', `/patients/${p.id}/sessions/${s.id}`, 'מה המטופל מביא היום?'],
+    ['new', '/patients/new', 'מטופל חדש'],
+    ['patient', `/p/${'b'.repeat(36)}`, 'שלום דנה'],
+  ]) {
+    await mp.goto(BASE + url);
+    await mp.getByText(wait).first().waitFor();
+    await mp.waitForTimeout(900);
+    const over = await mp.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    ok(over <= 0, `mobile ${name}: no horizontal scroll (${over}px)`);
+    await mp.screenshot({ path: path.join(SHOTS, `m-${name}.png`), fullPage: true });
+  }
+
+  // delete patient from the A&I menu
+  await page.goto(`${BASE}/patients/${p.id}`);
+  await page.getByText('סשנים').waitFor();
+  await menu(page, 'מחיקת המטופל');
+  await page.getByText('אין עדיין מטופלים.').waitFor();
+  ok(db.accbars_patients.length === 0, 'patient deleted');
+
+  // sign out
+  await menu(page, 'יציאה מהחשבון');
+  await page.getByText('מקום שקט לעבודה').waitFor();
+  ok(log.some((l) => l.path === '/auth/v1/logout'), 'sign-out request sent');
+
+  // installability
+  const cdp = await ctx.newCDPSession(page);
+  await page.goto(BASE);
+  await page.waitForTimeout(1500);
+  const inst = await cdp.send('Page.getInstallabilityErrors');
+  ok(inst.installabilityErrors.length === 0, `installable (${JSON.stringify(inst.installabilityErrors)})`);
+
+  ok(errors.length === 0, `no page errors ${errors.join(' | ')}`);
+  await browser.close();
+  console.log(failures ? `\n${failures} failed` : '\nall passed');
+  process.exit(failures ? 1 : 0);
+})().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
