@@ -17,6 +17,9 @@ import {
   rotateToken,
   updateExercise,
 } from '../lib/data';
+import Enneagram from '../components/viz/Enneagram';
+import GoalMap from '../components/viz/GoalMap';
+import Journey from '../components/viz/Journey';
 import { enneagramLabel } from '../lib/enneagram';
 import { errText, fmtDate, fmtWhen } from '../lib/format';
 
@@ -150,6 +153,7 @@ export default function PatientCard() {
       <Link className="crumb" to="/">
         חזרה לרשימה
       </Link>
+      <div className={patient.enneagram_type ? 'hero-split' : ''}>
       <section className="hero hero-card">
         <span className="label">כרטיס מטופל</span>
         <h1 className="h-hero">{patient.full_name}</h1>
@@ -193,6 +197,15 @@ export default function PatientCard() {
           </button>
         </div>
       </section>
+      {patient.enneagram_type && <Enneagram active={patient.enneagram_type} size={300} caption="השערת עבודה" />}
+      </div>
+
+      {sessions.length > 0 && (
+        <section className="card journey-card">
+          <span className="label">המסע</span>
+          <Journey sessions={sessions} exercises={data.exercises} patientId={id} />
+        </section>
+      )}
 
       <div className="card-grid">
         <section className="card">
@@ -214,6 +227,7 @@ export default function PatientCard() {
               ))}
             </ul>
           )}
+          {sessions.length > 0 && goals.length > 0 && <GoalMap goals={goals} sessions={sessions} />}
           <form className="inline-add" onSubmit={addGoal}>
             <input value={newGoal} onChange={(e) => setNewGoal(e.target.value)} placeholder="יעד נוסף" aria-label="יעד נוסף" />
             <button className="btn btn-ghost" disabled={!newGoal.trim()}>

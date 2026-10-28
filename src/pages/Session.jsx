@@ -10,11 +10,13 @@ import {
   getPatient,
   getSession,
   listExercises,
+  listGoals,
   updateExercise,
   updatePatient,
   updateSession,
   upsertSessionExercise,
 } from '../lib/data';
+import Unfurl from '../components/viz/Unfurl';
 import { hasDistressSign, REFERRAL } from '../lib/distress';
 import { errText, fmtDate, fromLocalInput, toLocalInput } from '../lib/format';
 
@@ -27,7 +29,7 @@ const STEPS = [
   { key: 'next', title: 'סשן הבא', ask: 'מתי נפגשים, ומה נשאר פתוח.' },
 ];
 
-const FIELDS = ['session_date', 'brought', 'discussed', 'insight', 'summary', 'open_points', 'next_session_at'];
+const FIELDS = ['session_date', 'brought', 'discussed', 'insight', 'summary', 'open_points', 'next_session_at', 'goal_ids'];
 
 export default function Session() {
   const { id, sid } = useParams();
@@ -38,6 +40,7 @@ export default function Session() {
   const [patient, setPatient] = useState(null);
   const [exercise, setExercise] = useState('');
   const [prevEx, setPrevEx] = useState(null);
+  const [goals, setGoals] = useState([]);
   const [prevNote, setPrevNote] = useState('');
   const [step, setStep] = useState(0);
   const [failed, setFailed] = useState(false);
@@ -49,7 +52,8 @@ export default function Session() {
   const load = useCallback(async () => {
     setFailed(false);
     try {
-      const [sess, pat, exs] = await Promise.all([getSession(sid), getPatient(id), listExercises(id)]);
+      const [sess, pat, exs, gs] = await Promise.all([getSession(sid), getPatient(id), listExercises(id), listGoals(id)]);
+      setGoals(gs);
       const own = exs.find((e) => e.session_id === sid);
       const prev = exs.find((e) => e.session_id !== sid) ?? null;
       setS(sess);
@@ -73,7 +77,8 @@ export default function Session() {
   const persist = useCallback(
     async (next) => {
       const patch = {};
-      for (const f of FIELDS) if ((next[f] ?? null) !== (saved.current?.[f] ?? null)) patch[f] = next[f];
+      const same = (a, b) => (Array.isArray(a) || Array.isArray(b) ? JSON.stringify(a ?? []) === JSON.stringify(b ?? []) : (a ?? null) === (b ?? null));
+      for (const f of FIELDS) if (!same(next[f], saved.current?.[f])) patch[f] = next[f];
       if (next.risk_ack_at !== saved.current?.risk_ack_at) patch.risk_ack_at = next.risk_ack_at;
       if (!Object.keys(patch).length) return;
       setStatus('שומרת...');
@@ -184,16 +189,7 @@ export default function Session() {
         <h1 className="h-display">{patient.full_name}</h1>
       </header>
 
-      <ol className="stepper" aria-label="שלבי הסשן">
-        {STEPS.map((st, i) => (
-          <li key={st.key}>
-            <button className={`step ${i === step ? 'is-current' : ''} ${i < step ? 'is-past' : ''}`} onClick={() => go(i)} aria-current={i === step ? 'step' : undefined}>
-              <span className="step-n">{i + 1}</span>
-              <span className="step-t">{st.title}</span>
-            </button>
-          </li>
-        ))}
-      </ol>
+      <Unfurl steps={STEPS} current={step} onGo={go} />
 
       <AnimatePresence>
         {risk && (
@@ -252,7 +248,27 @@ export default function Session() {
               <TextStep value={s.brought} onChange={(v) => change('brought', v)} />
             </>
           )}
-          {cur.key === 'discussed' && <TextStep rows={7} value={s.discussed} onChange={(v) => change('discussed', v)} />}
+          {cur.key === 'discussed' && (
+            <>
+              <TextStep rows={7} value={s.discussed} onChange={(v) => change('discussed', v)} />
+              {goals.length > 0 && (
+                <div className="goal-chips" role="group" aria-label="לאיזה יעד הסשן נגע">
+                  <span className="label">לאיזה יעד זה נגע</span>
+                  <div className="row">
+                    {goals.map((g) => {
+                      const on = (s.goal_ids ?? []).includes(g.id);
+                      return (
+                        <button key={g.id} type="button" className={`chip ${on ? 'is-on' : ''}`} aria-pressed={on}
+                          onClick={() => change('goal_ids', on ? s.goal_ids.filter((x) => x !== g.id) : [...(s.goal_ids ?? []), g.id])}>
+                          {g.text}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
           {cur.key === 'insight' && <TextStep rows={2} value={s.insight} onChange={(v) => change('insight', v)} />}
           {cur.key === 'exercise' && <TextStep rows={3} value={exercise} onChange={setExercise} onBlur={() => saveExercise().catch(() => toast('לא נשמר.', 'error'))} />}
           {cur.key === 'summary' && (

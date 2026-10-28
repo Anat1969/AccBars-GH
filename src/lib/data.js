@@ -6,7 +6,7 @@ const S = 'accbars_sessions';
 const E = 'accbars_exercises';
 
 export const listPatients = () =>
-  q(supabase.from(P).select('id, full_name, next_session_at, open_point').order('next_session_at', { ascending: true, nullsFirst: false }).order('full_name'));
+  q(supabase.from(P).select('id, full_name, next_session_at, open_point, enneagram_type').order('next_session_at', { ascending: true, nullsFirst: false }).order('full_name'));
 
 export const getPatient = (id) => q(supabase.from(P).select('*').eq('id', id).single());
 export const createPatient = (row) => q(supabase.from(P).insert(row).select('id').single());

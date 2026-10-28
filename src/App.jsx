@@ -11,6 +11,7 @@ import Patients from './pages/Patients';
 import PatientView from './pages/PatientView';
 import Session from './pages/Session';
 import NotFound from './pages/NotFound';
+import Method from './pages/Method';
 
 export default function App() {
   const location = useLocation();
@@ -31,6 +32,7 @@ export default function App() {
             <AnimatePresence mode="wait">
               <Routes location={location} key={location.pathname}>
                 <Route path="/" element={<Patients />} />
+                <Route path="/method" element={<Method />} />
                 <Route path="/patients/new" element={<PatientForm />} />
                 <Route path="/patients/:id" element={<PatientCard />} />
                 <Route path="/patients/:id/edit" element={<PatientForm />} />

@@ -48,7 +48,7 @@ async function mockSupabase(page, db, log) {
     if (url.pathname === '/auth/v1/recover') return json(200, {});
     if (url.pathname === '/auth/v1/user') return json(200, sessionFor('aal1').user);
     if (url.pathname === '/auth/v1/factors' && method === 'POST')
-      return json(200, { id: 'f1', type: 'totp', totp: { qr_code: 'data:image/svg+xml;utf-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10"/></svg>', secret: 'SECRET', uri: 'otpauth://x' } });
+      return json(200, { id: 'f1', type: 'totp', totp: { qr_code: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10"/></svg>', secret: 'SECRET', uri: 'otpauth://x' } });
     if (/\/auth\/v1\/factors\/f1\/challenge$/.test(url.pathname)) return json(200, { id: 'c1', expires_at: 4102444800 });
     if (/\/auth\/v1\/factors\/f1\/verify$/.test(url.pathname)) return json(200, sessionFor('aal2'));
 
@@ -104,7 +104,7 @@ async function mockSupabase(page, db, log) {
 
 function defaults(table) {
   if (table === 'accbars_patients') return { share_token: 'a'.repeat(36), opened_on: '2026-09-15', next_session_at: null, open_point: null };
-  if (table === 'accbars_sessions') return { status: 'draft', session_date: '2026-10-28', risk_ack_at: null };
+  if (table === 'accbars_sessions') return { status: 'draft', session_date: '2026-10-28', risk_ack_at: null, goal_ids: [] };
   return {};
 }
 
@@ -137,7 +137,8 @@ async function menu(page, label) {
     await page.getByRole('button', { name: 'כניסה' }).click();
     await page.getByText('שכבת הגנה נוספת').waitFor();
     ok(log.some((l) => l.path === '/auth/v1/token' && l.search.includes('grant_type=password')), 'password sign-in request sent');
-    ok(await page.locator('.qr svg').isVisible(), 'TOTP QR code shown');
+    await page.locator('.qr svg').waitFor();
+    ok(!(await page.locator('.qr').innerText()).includes('data:'), 'TOTP QR code shown as an image');
     await page.getByLabel('קוד בן שש ספרות').fill('123456');
     await page.getByRole('button', { name: 'אישור' }).click();
     await page.getByText('אין עדיין מטופלים.').waitFor();
@@ -178,7 +179,7 @@ async function menu(page, label) {
   const insert = log.find((l) => l.method === 'POST' && l.path.endsWith('accbars_patients'));
   ok(insert && insert.body.full_name === 'דנה ל.' && insert.body.age === 38 && insert.body.enneagram_type === 6, 'patient insert carries the form values');
   ok(db.accbars_goals.length === 2, 'two goals saved');
-  ok(await page.getByText('6, הנאמן').isVisible(), 'enneagram hypothesis shown on the card');
+  ok(await page.locator('dd', { hasText: '6, הנאמן' }).isVisible(), 'enneagram hypothesis shown on the card');
   await page.screenshot({ path: path.join(SHOTS, '02-card-empty.png'), fullPage: true });
 
   // goals: add
@@ -211,6 +212,9 @@ async function menu(page, label) {
   await page.getByRole('button', { name: 'הבא', exact: true }).click();
   await page.getByText('מה קרה בסשן?').waitFor();
   await page.locator('textarea.big-text').fill('התמקדות בעומס לפני ישיבות.');
+  await page.getByRole('button', { name: 'להרגיש פחות לחוצה לפני ישיבות עבודה' }).click();
+  await page.waitForTimeout(1300);
+  ok((db.accbars_sessions[0].goal_ids ?? []).length === 1, 'goal chip saved on the session');
   // distress sign stops the flow
   await page.locator('textarea.big-text').fill('התמקדות בעומס. אמרה שהיא לא רוצה לחיות ככה.');
   await page.getByText('עולה כאן סימן אפשרי למצוקה או לסיכון').waitFor();
@@ -230,13 +234,15 @@ async function menu(page, label) {
   await page.getByRole('button', { name: 'הבא', exact: true }).click();
   // finish without summary jumps back
   await page.getByLabel('נקודה פתוחה לסשן הבא').fill('האם התרגיל של שלוש השורות נשמר');
-  await page.getByLabel('הסשן הבא').fill('2026-11-04T10:00');
+  const soon = new Date(Date.now() + 2 * 864e5);
+  const soonVal = `${soon.getFullYear()}-${String(soon.getMonth() + 1).padStart(2, '0')}-${String(soon.getDate()).padStart(2, '0')}T10:00`;
+  await page.getByLabel('הסשן הבא').fill(soonVal);
   await page.getByRole('button', { name: 'סיום הסשן' }).click();
   await page.getByText('מה המטופל לוקח איתו, במשפט אחד.').waitFor();
   ok(true, 'finish without summary returns to the summary step');
   await page.locator('textarea.big-text').fill('הלחץ מתחיל לפני הישיבה, ושם אפשר לעצור.');
   // stepper jumps
-  await page.locator('.stepper .step').nth(5).click();
+  await page.locator('.uf-node').nth(5).click();
   await page.waitForTimeout(1200);
   await page.evaluate(() => scrollTo(0, 0));
   await page.screenshot({ path: path.join(SHOTS, '03-session.png') });
@@ -248,6 +254,15 @@ async function menu(page, label) {
   const p = db.accbars_patients[0];
   ok(p.open_point === 'האם התרגיל של שלוש השורות נשמר' && p.next_session_at, 'next session and open point moved to the patient');
   ok(await page.getByText('נרשמה הפניה').isVisible(), 'referral tag in history');
+  ok(await page.locator('.journey .jr-leaf').count() === 1, 'journey shows one leaf for the session');
+  ok(await page.locator('.goal-map path').count() === 1, 'goal map draws one thread');
+  ok(await page.locator('.enneagram').first().isVisible(), 'enneagram on the card');
+  await page.waitForTimeout(1500);
+  await page.locator('.journey .jr-leaf').first().click();
+  await page.getByText('מה המטופל מביא היום?').waitFor();
+  ok(true, 'journey leaf opens the session');
+  await page.goBack();
+  await page.locator('.session-item').first().waitFor();
 
   // done note on the exercise
   await page.getByLabel('מה נעשה בפועל').fill('נעשה בשלושה בקרים');
@@ -268,12 +283,32 @@ async function menu(page, label) {
   await page.locator('header a.brand').click();
   await page.getByText('הסשן הבא:').waitFor();
   ok(await page.getByText('האם התרגיל של שלוש השורות נשמר').isVisible(), 'open point shown in list');
+  ok(await page.locator('.week-ring .wr-drop').count() === 1, 'week ring shows the coming session');
+  ok(await page.locator('.dash .enneagram').isVisible(), 'patients enneagram map on home');
   ok(!(await page.getByText('050-0000000').isVisible().catch(() => false)), 'phone hidden in list');
   await page.getByLabel('חיפוש לפי שם').fill('אין כזה');
   ok(await page.getByText('אין מטופל בשם הזה.').isVisible(), 'search with no match');
   await page.getByLabel('חיפוש לפי שם').fill('דנה');
   ok(await page.locator('.patient-row').count() === 1, 'search by name');
   await page.screenshot({ path: path.join(SHOTS, '05-list.png'), fullPage: true });
+
+  // method map
+  await page.getByRole('link', { name: 'השיטה' }).click();
+  await page.getByText('מחזור הסשן').waitFor();
+  await page.locator('.cy-station circle').nth(3).click();
+  await page.locator('.cycle-card').getByText('תרגיל קטן וברור לשבוע.').waitFor();
+  ok(true, 'cycle station opens its card');
+  await page.locator('.method-block .en-point').nth(5).scrollIntoViewIfNeeded();
+  await page.locator('.en-point[aria-label="6, הנאמן"] circle').last().click();
+  await page.locator('.type-cards').getByText('מחפש ביטחון ויציבות.').waitFor();
+  ok(true, 'enneagram point opens the type card');
+  await page.getByRole('button', { name: 'לכל הטיפוסים' }).click();
+  ok(await page.locator('.type-list li').count() === 9, 'back to all nine types');
+  await page.locator('.schema').scrollIntoViewIfNeeded();
+  await page.waitForTimeout(2500);
+  await page.screenshot({ path: path.join(SHOTS, '07-method.png'), fullPage: true });
+  await page.locator('header a.brand').click();
+  await page.getByText('הסשן הבא:').waitFor();
 
   // patient screen
   const pv = await ctx.newPage();
@@ -285,8 +320,17 @@ async function menu(page, label) {
   ok(await pv.getByText('שלום דנה').isVisible(), 'patient screen greets by first name');
   ok(await pv.getByText('שלוש שורות בבוקר לפני המייל.').isVisible(), 'patient screen shows the exercise');
   ok(await pv.getByText(/ער"ן/).isVisible(), 'patient screen shows the care line');
-  await pv.waitForTimeout(1800);
+  await pv.waitForTimeout(3000);
   await pv.screenshot({ path: path.join(SHOTS, '06-patient.png'), fullPage: true });
+  await pv.getByRole('button', { name: 'רגע של נשימה' }).click();
+  await pv.getByText('שאיפה').waitFor();
+  await pv.getByText('נשיפה').waitFor({ timeout: 8000 });
+  ok(true, 'breathing moves from in to out');
+  await pv.waitForTimeout(1500);
+  await pv.screenshot({ path: path.join(SHOTS, '08-breath.png') });
+  await pv.getByRole('button', { name: 'לעצור' }).click();
+  await pv.locator('.breath').waitFor({ state: 'detached', timeout: 5000 });
+  ok(true, 'breathing closes');
   await pv.goto(`${BASE}/p/${'a'.repeat(36)}`);
   await pv.getByText('הקישור אינו פעיל').waitFor();
   ok(true, 'old link is inactive after rotation');
@@ -303,6 +347,7 @@ async function menu(page, label) {
     ['card', `/patients/${p.id}`, 'סשנים'],
     ['session', `/patients/${p.id}/sessions/${s.id}`, 'מה המטופל מביא היום?'],
     ['new', '/patients/new', 'מטופל חדש'],
+    ['method', '/method', 'מחזור הסשן'],
     ['patient', `/p/${'b'.repeat(36)}`, 'שלום דנה'],
   ]) {
     await mp.goto(BASE + url);
