@@ -28,7 +28,6 @@ export default function App() {
           </>
         ) : (
           <AuthGate>
-            <TopBar />
             <AnimatePresence mode="wait">
               <Routes location={location} key={location.pathname}>
                 <Route path="/" element={<Patients />} />
