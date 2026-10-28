@@ -104,7 +104,7 @@ async function mockSupabase(page, db, log) {
 
 function defaults(table) {
   if (table === 'accbars_patients') return { share_token: 'a'.repeat(36), opened_on: '2026-09-15', next_session_at: null, open_point: null };
-  if (table === 'accbars_sessions') return { status: 'draft', session_date: '2026-10-28', risk_ack_at: null, goal_ids: [] };
+  if (table === 'accbars_sessions') return { status: 'draft', session_date: '2026-10-28', risk_ack_at: null, goal_ids: [], bars: [] };
   return {};
 }
 
@@ -128,7 +128,7 @@ async function menu(page, label) {
     page.on('pageerror', (e) => errors.push(e.message));
     // public home explains the product before any sign-in
     await page.goto(BASE);
-    await page.getByText('מקום אחד למטופל,').waitFor();
+    await page.getByText('מרחב העבודה של מטפלת').waitFor();
     ok(await page.locator('.wordmark').isVisible(), 'home shows the AccBars wordmark');
     ok(await page.getByText('מה זה AccBars').isVisible(), 'home explains what AccBars is');
     ok(!log.some((l) => l.path.startsWith('/rest/v1/accbars_')), 'home reads no patient data');
@@ -153,6 +153,40 @@ async function menu(page, label) {
     await page.locator('.fan').scrollIntoViewIfNeeded();
     await page.waitForTimeout(2200);
     await page.screenshot({ path: path.join(SHOTS, '13-home-fan.png') });
+    ok(await page.locator('.showcase .headmap').count() === 3, 'home shows the three head views');
+    // the public bars page
+    await page.goto(BASE + '/bars');
+    await page.getByText('32 נקודות על').waitFor();
+    await page.locator('.bars-explorer .hm-bar[aria-label="שליטה, Control"] circle').last().hover();
+    await page.locator('.bar-info').getByRole('heading', { name: 'שליטה' }).waitFor();
+    ok(await page.locator('.bar-info').getByText('אצבע אחת אחורה מהכסף').isVisible(), 'hovering a bar shows its place');
+    await page.locator('.bars-controls').getByRole('button', { name: 'מבט מלמעלה' }).click();
+    await page.locator('.bars-explorer .hm-bar[aria-label="גוף, Body"]').waitFor();
+    ok(true, 'top view shows its bars');
+    await page.locator('.bars-controls').getByRole('button', { name: 'רגש' }).click();
+    ok(await page.locator('.bars-side .bar-chip').count() === 0, 'group filter narrows the view list (no feeling bars on top)');
+    await page.locator('.bars-controls').getByRole('button', { name: 'כל הקבוצות' }).click();
+    await page.locator('.group-card').getByRole('button', { name: /עצב/ }).click();
+    await page.locator('.bar-info').getByRole('heading', { name: 'עצב' }).waitFor();
+    ok(await page.locator('.bars-controls').getByRole('button', { name: 'מבט מלפנים' }).getAttribute('aria-pressed') === 'true', 'list item opens its view on the map');
+    await page.waitForTimeout(1200);
+    await page.screenshot({ path: path.join(SHOTS, '14-bars.png') });
+    const target = (await page.locator('.quiz-target').innerText()).trim();
+    await page.locator('.quiz').scrollIntoViewIfNeeded();
+    await page.locator(`.quiz .hm-bar[aria-label^="${target},"] circle`).last().click();
+    await page.locator('.quiz .msg-ok').waitFor();
+    ok(true, 'quiz: the right point is accepted');
+    await page.getByRole('button', { name: 'הבר הבא' }).click();
+    const t2 = (await page.locator('.quiz-target').innerText()).trim();
+    const wrong = await page.locator(`.quiz .hm-bar:not([aria-label^="${t2},"])`).first();
+    await wrong.locator('circle').last().click();
+    await page.locator('.quiz .msg-error').waitFor();
+    ok(true, 'quiz: a wrong point invites another try');
+    await page.waitForTimeout(800);
+    await page.screenshot({ path: path.join(SHOTS, '15-quiz.png') });
+    ok(await page.getByText('אינם ממצאים מדעיים').isVisible(), 'bars page states it is the method, not science');
+    await page.goto(BASE);
+    await page.getByText('מרחב העבודה של מטפלת').waitFor();
     await page.locator('.home-cta').getByRole('link', { name: 'כניסה' }).click();
     await page.getByText('מקום שקט לעבודה').waitFor();
     ok(page.url().endsWith('/patients'), 'home entry leads to sign-in');
@@ -253,6 +287,16 @@ async function menu(page, label) {
   await page.getByRole('button', { name: 'להרגיש פחות לחוצה לפני ישיבות עבודה' }).click();
   await page.waitForTimeout(1300);
   ok((db.accbars_sessions[0].goal_ids ?? []).length === 1, 'goal chip saved on the session');
+  await page.locator('.bars-picker .hm-bar[aria-label="כסף, Money"] circle').last().click();
+  await page.locator('.bars-picker .hm-bar[aria-label="ריפוי, Healing"] circle').last().click();
+  await page.locator('.bars-picker').getByRole('button', { name: 'מבט מלפנים' }).click();
+  await page.waitForTimeout(900);
+  await page.locator('.bars-picker .hm-bar[aria-label="שמחה, Joy"] circle').last().click();
+  await page.waitForTimeout(1300);
+  ok(JSON.stringify(db.accbars_sessions[0].bars) === JSON.stringify(['money', 'healing', 'joy']), 'bars run in the session are saved');
+  await page.locator('.bars-picker').getByRole('button', { name: 'הסרת ריפוי' }).click();
+  await page.waitForTimeout(1300);
+  ok(db.accbars_sessions[0].bars.length === 2, 'a bar can be unmarked');
   // distress sign stops the flow
   await page.locator('textarea.big-text').fill('התמקדות בעומס. אמרה שהיא לא רוצה לחיות ככה.');
   await page.getByText('עולה כאן סימן אפשרי למצוקה או לסיכון').waitFor();
@@ -305,6 +349,12 @@ async function menu(page, label) {
   ok(p.open_point === 'האם התרגיל של שלוש השורות נשמר' && p.next_session_at, 'next session and open point moved to the patient');
   ok(await page.getByText('נרשמה הפניה').isVisible(), 'referral tag in history');
   ok(await page.locator('.journey .jr-leaf').count() === 1, 'journey shows one leaf for the session');
+  ok(await page.locator('.patient-bars').isVisible(), 'patient bars map on the card');
+  await page.locator('.patient-bars').scrollIntoViewIfNeeded();
+  await page.waitForTimeout(1800);
+  await page.locator('.patient-bars .hm-bar[aria-label="כסף, Money"]').focus();
+  await page.locator('.patient-bars').getByText('הורץ ב-1 סשנים').waitFor();
+  ok(true, 'patient bars map tells when a bar was run');
   ok(await page.locator('.goal-map path').count() === 1, 'goal map draws one thread');
   ok(await page.locator('.enneagram').first().isVisible(), 'enneagram on the card');
   await page.waitForTimeout(1500);
@@ -331,7 +381,7 @@ async function menu(page, label) {
 
   // list
   await page.locator('header a.brand').click();
-  await page.getByText('מקום אחד למטופל,').waitFor();
+  await page.getByText('מרחב העבודה של מטפלת').waitFor();
   ok(await page.locator('.hero-text').getByRole('link', { name: 'למטופלים' }).isVisible(), 'signed-in home offers the way in');
   await page.locator('.topnav').getByRole('link', { name: 'מטופלים' }).click();
   await page.getByText('הסשן הבא:').waitFor();
@@ -435,12 +485,13 @@ async function menu(page, label) {
   await mockSupabase(mp, db, log);
   mp.on('pageerror', (e) => errors.push(e.message));
   for (const [name, url, wait] of [
-    ['home', '/', 'מקום אחד למטופל,'],
+    ['home', '/', 'מרחב העבודה של מטפלת'],
     ['list', '/patients', 'דנה ל.'],
     ['card', `/patients/${p.id}`, 'סשנים'],
     ['session', `/patients/${p.id}/sessions/${s.id}`, 'מה המטופל מביא היום?'],
     ['new', '/patients/new', 'מטופל חדש'],
     ['method', '/method', 'מחזור הסשן'],
+    ['bars', '/bars', '32 נקודות על'],
     ['library', '/library', 'תרגיל, משחק,'],
     ['patient', `/p/${'b'.repeat(36)}`, 'שלום דנה'],
   ]) {
@@ -454,7 +505,7 @@ async function menu(page, label) {
 
   // delete patient from the A&I menu
   await page.goto(`${BASE}/patients/${p.id}`);
-  await page.getByText('סשנים').waitFor();
+  await page.getByRole('heading', { name: 'סשנים' }).waitFor();
   await menu(page, 'מחיקת המטופל');
   await page.getByText('אין עדיין מטופלים.').waitFor();
   ok(db.accbars_patients.length === 0, 'patient deleted');

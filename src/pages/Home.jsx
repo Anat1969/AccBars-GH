@@ -6,13 +6,15 @@ import Page from '../components/Page';
 import Enneagram from '../components/viz/Enneagram';
 import { ENNEAGRAM } from '../lib/enneagram';
 import { LIBRARY, TYPE_HUE } from '../lib/library';
+import HeadMap from '../components/viz/HeadMap';
+import { BARS, VIEWS, barByKey } from '../lib/bars';
 
 const ease = [0.22, 0.61, 0.36, 1];
 const rise = (i = 0) => ({ initial: { opacity: 0, y: 30 }, whileInView: { opacity: 1, y: 0 }, viewport: { once: true, amount: 0.3 }, transition: { duration: 1.1, delay: i * 0.12, ease } });
 
 const STEPS = [
   { t: 'פתיחה', d: 'מה המטופל מביא היום, ומה נשאר פתוח מהפעם הקודמת.' },
-  { t: 'רישום', d: 'מה קרה בסשן, ולאיזה יעד הוא נגע.' },
+  { t: 'רישום', d: 'מה קרה בסשן, אילו בארס הורצו, ולאיזה יעד זה נגע.' },
   { t: 'תובנה אחת', d: 'אחת מספיקה. היא מכוונת את ההמשך.' },
   { t: 'תרגיל לשבוע', d: 'הצעות מהספרייה לפי הטיפוס ולפי מה שעלה בתובנה.' },
   { t: 'סיכום במשפט', d: 'מה המטופל לוקח איתו. זה המסר שהוא יראה.' },
@@ -25,6 +27,7 @@ export default function Home() {
   return (
     <Page className="page-home">
       <Hero ready={ready} />
+      <BarsShowcase />
       <Pillars />
       <Journey />
       <Types />
@@ -57,43 +60,27 @@ function Hero({ ready }) {
   const yText = useTransform(scrollYProgress, [0, 1], [0, still ? 0 : -60]);
   const fade = useTransform(scrollYProgress, [0, 0.8], [1, 0]);
   const word = 'AccBars'.split('');
+  const sideBars = BARS.filter((x) => x.view === 'side');
+  const [ci, setCi] = useState(0);
+  useEffect(() => {
+    if (still) return undefined;
+    const t = setInterval(() => setCi((n) => (n + 1) % sideBars.length), 3400);
+    return () => clearInterval(t);
+  }, [still, sideBars.length]);
+  const cycle = sideBars[ci].key;
 
   return (
     <section ref={ref} className="home-hero">
       <motion.div className="hero-art" aria-hidden="true">
         <motion.div className="hero-halo" style={{ y: yBack }} />
-        <motion.svg className="hero-frond" viewBox="0 0 520 640" style={{ y: yMid }}>
-          <defs>
-            <radialGradient id="hh-drop" cx="34%" cy="30%" r="70%">
-              <stop offset="0" stopColor="#fff" />
-              <stop offset="0.5" stopColor="#fdf7ee" />
-              <stop offset="1" stopColor="#d5b393" />
-            </radialGradient>
-            <linearGradient id="hh-leaf" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0" stopColor="#8d9c86" stopOpacity="0.85" />
-              <stop offset="1" stopColor="#56654f" stopOpacity="0.9" />
-            </linearGradient>
-          </defs>
-          <motion.path d="M120 640 C 150 520, 300 430, 330 300 C 350 210, 300 150, 250 150 C 200 150, 185 205, 222 228 C 250 245, 280 222, 268 196"
-            fill="none" stroke="var(--stem)" strokeWidth="6" strokeLinecap="round"
-            initial={{ pathLength: still ? 1 : 0 }} animate={{ pathLength: 1 }} transition={{ duration: 3.2, ease: 'easeInOut' }} />
-          {Array.from({ length: 9 }, (_, i) => {
-            const t = i / 9;
-            const x = 132 + t * 190 + Math.sin(t * 3) * 14;
-            const y = 610 - t * 330;
-            const len = 120 * (1 - t * 0.6);
-            return (
-              <motion.g key={i} initial={{ opacity: 0, scale: 0.2 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 1.4, delay: still ? 0 : 0.8 + i * 0.18, ease }}
-                style={{ originX: `${x}px`, originY: `${y}px` }}>
-                <path transform={`translate(${x} ${y}) rotate(${-150 + i * 4})`} d={`M0 0 q ${len * 0.4} ${-len * 0.28} ${len} 0 q ${-len * 0.6} ${len * 0.26} ${-len} 0z`} fill="url(#hh-leaf)" />
-                <path transform={`translate(${x} ${y}) rotate(${-25 - i * 3})`} d={`M0 0 q ${len * 0.4} ${-len * 0.28} ${len} 0 q ${-len * 0.6} ${len * 0.26} ${-len} 0z`} fill="url(#hh-leaf)" />
-              </motion.g>
-            );
-          })}
-          <motion.circle cx="268" cy="196" fill="url(#hh-drop)" initial={{ r: 0 }} animate={{ r: [0, 22, 18, 22] }}
-            transition={{ duration: 7, delay: still ? 0 : 2.6, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' }} />
-          <circle cx="268" cy="196" r="60" fill="#fff6e8" opacity="0.35" style={{ filter: 'blur(18px)' }} />
-        </motion.svg>
+        <motion.div className="hero-head" style={{ y: yMid }}>
+          <HeadMap view="side" focus={cycle} />
+          <AnimatePresence mode="wait">
+            <motion.p key={cycle} className="hero-head-cap" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.8 }}>
+              <strong>{barByKey(cycle).he}</strong> {barByKey(cycle).theme}
+            </motion.p>
+          </AnimatePresence>
+        </motion.div>
       </motion.div>
 
       <motion.div className="hero-text" style={{ y: yText, opacity: fade }}>
@@ -106,10 +93,10 @@ function Hero({ ready }) {
           ))}
         </p>
         <motion.h1 className="hero-title" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 1.2, delay: still ? 0 : 1, ease }}>
-          מקום אחד למטופל, <span className="light-point">למפגש</span> ולתובנה.
+          מרחב העבודה של מטפלת <span className="light-point">Access Bars</span>.
         </motion.h1>
         <motion.p className="hero-lead" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 1.4, delay: still ? 0 : 1.5 }}>
-          כלי עבודה אישי למטפלת שעובדת עם אניאגרם. רושמת סשן בשישה שלבים, מחזיקה את התמונה המלאה של כל מטופל, ושולחת לו מסר אחד ותרגיל אחד לשבוע.
+          מפת 32 הנקודות על הראש, רישום של כל סשן ושל הבארס שהורצו בו, מסע לכל מטופל, ומסר אחד ותרגיל אחד לשבוע שבין המפגשים.
         </motion.p>
         <motion.div className="row" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 1.2, delay: still ? 0 : 1.9 }}>
           <Link className="btn btn-primary btn-large" to="/patients">
@@ -125,10 +112,48 @@ function Hero({ ready }) {
   );
 }
 
+function BarsShowcase() {
+  const [focus, setFocus] = useState(null);
+  const b = focus && barByKey(focus);
+  return (
+    <section className="wrap showcase">
+      <motion.header {...rise()}>
+        <span className="label">מפת הבארס</span>
+        <h2 className="h-display">שלושה מבטים על הראש, וכל נקודה בצבע שלה במפה.</h2>
+        <p className="quiet">מעבר על נקודה מציג את שמה ואת הנושא שלה לפי השיטה.</p>
+      </motion.header>
+      <div className="showcase-grid">
+        {VIEWS.map((v, i) => (
+          <motion.div key={v.key} className="card showcase-card" {...rise(i)}>
+            <span className="label">{v.name}</span>
+            <HeadMap view={v.key} focus={focus} onFocus={setFocus} onPick={setFocus} />
+          </motion.div>
+        ))}
+      </div>
+      <div className="showcase-foot">
+        <AnimatePresence mode="wait">
+          <motion.p key={focus || 'none'} className="showcase-cap" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.7 }}>
+            {b ? (
+              <>
+                <strong>{b.he}</strong> <span dir="ltr">{b.en}</span>. {b.theme} <span className="quiet">{b.where}</span>
+              </>
+            ) : (
+              <span className="quiet">{BARS.length} בארס, בארבע קבוצות: גוף, רגש, יצירה ופעולה, מודעות וזמן.</span>
+            )}
+          </motion.p>
+        </AnimatePresence>
+        <Link className="btn btn-ghost" to="/bars">
+          למפה המלאה ולתרגול מיקום
+        </Link>
+      </div>
+    </section>
+  );
+}
+
 function Pillars() {
   const items = [
-    { n: '9', label: 'ידע', title: 'תשעה טיפוסים', d: 'אניאגרם כמסגרת להתבוננות, לא אבחון: כנפיים, קווים, ומה מזמין הקלה.', art: <MiniEnneagram /> },
-    { n: '1', label: 'הבנה', title: 'מסע אחד לכל מטופל', d: 'יעדים בניסוח שלו, סשנים כעלים על גבעול, וחוטים שמראים לאן כל מפגש נגע.', art: <MiniFrond /> },
+    { n: '32', label: 'ידע', title: 'מפת הבארס', d: 'כל נקודה על הראש, איפה היא נמצאת ובמה היא עוסקת לפי השיטה, בשלושה מבטים.', art: <MiniHead />, to: '/bars' },
+    { n: '9', label: 'הבנה', title: 'מסע ואניאגרם', d: 'סשנים כעלים על גבעול, הבארס שהורצו בכל מפגש, ואניאגרם כמסגרת להתבוננות.', art: <MiniEnneagram />, to: '/method' },
     { n: String(LIBRARY.length), label: 'יישום', title: 'תרגיל, משחק, חוויה', d: 'ספרייה לפי טיפוס, שמציעה בכל סשן את מה שמתאים לו.', art: <MiniCards /> },
   ];
   return (
@@ -145,10 +170,28 @@ function Pillars() {
             <span className="label">{x.label}</span>
             <h3 className="h-section">{x.title}</h3>
             <p className="quiet">{x.d}</p>
+            {x.to && (
+              <Link className="btn btn-link pillar-link" to={x.to}>
+                {x.to === '/bars' ? 'למפה המלאה' : 'למפת השיטה'}
+              </Link>
+            )}
           </motion.article>
         ))}
       </div>
     </section>
+  );
+}
+
+function MiniHead() {
+  const dots = [[62, 40, '#c9a227'], [70, 33, '#5f9d6b'], [84, 52, '#7cc6c0'], [48, 42, '#fbf4ea'], [40, 58, '#fbf4ea'], [56, 64, '#fbf4ea']];
+  return (
+    <svg viewBox="0 0 120 120">
+      <motion.path d="M40 104 C 30 90, 20 80, 22 60 C 24 30, 46 16, 70 18 C 94 20, 104 40, 100 56 L 106 70 L 99 74 C 100 84, 96 92, 82 92 C 80 98, 80 102, 82 104" fill="none" stroke="var(--stem)" strokeWidth="2" strokeLinecap="round"
+        initial={{ pathLength: 0 }} whileInView={{ pathLength: 1 }} viewport={{ once: true }} transition={{ duration: 2 }} />
+      {dots.map(([x, y, c], i) => (
+        <motion.circle key={i} cx={x} cy={y} r="4" fill={c} stroke="var(--stem)" strokeWidth="0.8" initial={{ scale: 0 }} whileInView={{ scale: 1 }} viewport={{ once: true }} transition={{ duration: 0.8, delay: 0.8 + i * 0.15 }} />
+      ))}
+    </svg>
   );
 }
 

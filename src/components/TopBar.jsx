@@ -43,11 +43,13 @@ export default function TopBar({ minimal = false }) {
             {auth?.ready ? (
               <>
                 <Tab to="/patients">מטופלים</Tab>
+                <Tab to="/bars">הבארס</Tab>
                 <Tab to="/library">ספרייה</Tab>
                 <Tab to="/method">השיטה</Tab>
               </>
             ) : (
               <>
+                <Tab to="/bars">הבארס</Tab>
                 <Tab to="/method">השיטה</Tab>
                 <Tab to="/patients">כניסה</Tab>
               </>
