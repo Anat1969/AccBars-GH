@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { configured, supabase } from '../lib/supabase';
 import { errText } from '../lib/format';
+import TopBar from './TopBar';
 
 const Ctx = createContext(null);
 export const useAuth = () => useContext(Ctx);
@@ -60,6 +61,7 @@ export default function AuthGate({ children }) {
 
   return (
     <Ctx.Provider value={value}>
+      <TopBar />
       {stage === 'ready' ? (
         children
       ) : (

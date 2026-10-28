@@ -127,6 +127,9 @@ async function menu(page, label) {
     await mockSupabase(page, db, log);
     page.on('pageerror', (e) => errors.push(e.message));
     await page.goto(BASE);
+    await page.getByText('מקום שקט לעבודה').waitFor();
+    await page.locator('ai-menu .logo').waitFor();
+    ok(true, 'A&I logo button on the sign-in screen');
     await page.getByLabel('אימייל').fill('therapist@example.test');
     await page.getByLabel('סיסמה').fill('long-password-1');
     await page.getByRole('button', { name: 'שחזור סיסמה' }).click();
