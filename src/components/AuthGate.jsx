@@ -13,7 +13,7 @@ const fade = { initial: { opacity: 0, y: 18 }, animate: { opacity: 1, y: 0 }, ex
  * stage: loading | signedOut | recovery | enroll | challenge | notAllowed | ready
  * Data is readable only at aal2, so the gate always ends in a second factor.
  */
-export default function AuthGate({ children }) {
+export default function AuthGate({ children, open = false }) {
   const [stage, setStage] = useState(configured ? 'loading' : 'unconfigured');
   const [session, setSession] = useState(null);
   const [mfaOn, setMfaOn] = useState(false);
@@ -70,7 +70,7 @@ export default function AuthGate({ children }) {
   return (
     <Ctx.Provider value={value}>
       <TopBar />
-      {stage === 'ready' ? (
+      {stage === 'ready' || open ? (
         children
       ) : (
         <main className="page page-narrow">
