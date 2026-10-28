@@ -72,7 +72,7 @@ export default function PatientForm() {
 
   return (
     <Page className="page-narrow">
-      <Link className="crumb" to={editing ? `/patients/${id}` : '/'}>
+      <Link className="crumb" to={editing ? `/patients/${id}` : '/patients'}>
         {editing ? 'חזרה לכרטיס' : 'חזרה לרשימה'}
       </Link>
       <h1 className="h-display">{editing ? 'עריכת פרטים' : 'מטופל חדש'}</h1>
@@ -120,7 +120,7 @@ export default function PatientForm() {
           <button className="btn btn-primary" disabled={busy}>
             {busy ? 'שומרת...' : editing ? 'שמירה' : 'הוספת המטופל'}
           </button>
-          <Link className="btn btn-link" to={editing ? `/patients/${id}` : '/'}>
+          <Link className="btn btn-link" to={editing ? `/patients/${id}` : '/patients'}>
             ביטול
           </Link>
         </div>

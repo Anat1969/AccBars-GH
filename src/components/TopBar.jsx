@@ -40,13 +40,16 @@ export default function TopBar({ minimal = false }) {
         </Link>
         {!minimal && (
           <nav className="topnav" aria-label="ניווט ראשי">
-            {auth?.ready && (
+            {auth?.ready ? (
               <>
-                <Tab to="/" end>
-                  מטופלים
-                </Tab>
+                <Tab to="/patients">מטופלים</Tab>
                 <Tab to="/library">ספרייה</Tab>
                 <Tab to="/method">השיטה</Tab>
+              </>
+            ) : (
+              <>
+                <Tab to="/method">השיטה</Tab>
+                <Tab to="/patients">כניסה</Tab>
               </>
             )}
           </nav>

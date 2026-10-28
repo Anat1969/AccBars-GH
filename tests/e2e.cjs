@@ -126,13 +126,42 @@ async function menu(page, label) {
     const log = [];
     await mockSupabase(page, db, log);
     page.on('pageerror', (e) => errors.push(e.message));
+    // public home explains the product before any sign-in
     await page.goto(BASE);
+    await page.getByText('מקום אחד למטופל,').waitFor();
+    ok(await page.locator('.wordmark').isVisible(), 'home shows the AccBars wordmark');
+    ok(await page.getByText('מה זה AccBars').isVisible(), 'home explains what AccBars is');
+    ok(!log.some((l) => l.path.startsWith('/rest/v1/accbars_')), 'home reads no patient data');
+    await page.waitForTimeout(2600);
+    await page.screenshot({ path: path.join(SHOTS, '10-home.png') });
+    // pinned journey follows the scroll
+    const pin = page.locator('.journey-pin');
+    await pin.scrollIntoViewIfNeeded();
+    const box = await pin.boundingBox();
+    const top = await page.evaluate(() => scrollY);
+    await page.evaluate((y) => scrollTo(0, y), top + box.y + box.height * 0.62);
+    await page.waitForTimeout(1500);
+    ok(await page.locator('.jp-card h3').innerText() === 'סיכום במשפט', 'journey moves to step 5 with the scroll');
+    await page.screenshot({ path: path.join(SHOTS, '11-home-journey.png') });
+    const first = await page.locator('.types-text h2').innerText();
+    await page.locator('.types').scrollIntoViewIfNeeded();
+    await page.waitForTimeout(5200);
+    ok((await page.locator('.types-text h2').innerText()) !== first, 'enneagram highlight moves on its own');
+    await page.locator('.deep').scrollIntoViewIfNeeded();
+    await page.waitForTimeout(3200);
+    await page.screenshot({ path: path.join(SHOTS, '12-home-deep.png') });
+    await page.locator('.fan').scrollIntoViewIfNeeded();
+    await page.waitForTimeout(2200);
+    await page.screenshot({ path: path.join(SHOTS, '13-home-fan.png') });
+    await page.locator('.home-cta').getByRole('link', { name: 'כניסה' }).click();
     await page.getByText('מקום שקט לעבודה').waitFor();
+    ok(page.url().endsWith('/patients'), 'home entry leads to sign-in');
     await page.locator('ai-menu .logo').waitFor();
     ok(true, 'A&I logo button on the sign-in screen');
     await page.getByLabel('אימייל').fill('therapist@example.test');
     await page.getByLabel('סיסמה').fill('long-password-1');
     await page.getByRole('button', { name: 'שחזור סיסמה' }).click();
+    await page.locator('.msg-ok').waitFor();
     ok(log.some((l) => l.path === '/auth/v1/recover'), 'password recovery request sent');
     await page.waitForTimeout(2500);
     await page.screenshot({ path: path.join(SHOTS, '00-signin.png') });
@@ -169,7 +198,7 @@ async function menu(page, label) {
   const log = [];
   await mockSupabase(page, db, log);
 
-  await page.goto(BASE);
+  await page.goto(BASE + '/patients');
   await page.getByText('אין עדיין מטופלים.').waitFor();
   ok(await page.locator('ai-menu .logo').isVisible(), 'A&I logo button in the top bar');
   ok(!(await page.locator('header >> text=העתקת קישור').first().isVisible().catch(() => false)), 'no loose development buttons in the bar');
@@ -302,6 +331,9 @@ async function menu(page, label) {
 
   // list
   await page.locator('header a.brand').click();
+  await page.getByText('מקום אחד למטופל,').waitFor();
+  ok(await page.locator('.hero-text').getByRole('link', { name: 'למטופלים' }).isVisible(), 'signed-in home offers the way in');
+  await page.locator('.topnav').getByRole('link', { name: 'מטופלים' }).click();
   await page.getByText('הסשן הבא:').waitFor();
   ok(await page.getByText('האם התרגיל של שלוש השורות נשמר').isVisible(), 'open point shown in list');
   ok(await page.locator('.week-ring .wr-drop').count() === 1, 'week ring shows the coming session');
@@ -367,7 +399,7 @@ async function menu(page, label) {
   await page.locator('.schema').scrollIntoViewIfNeeded();
   await page.waitForTimeout(2500);
   await page.screenshot({ path: path.join(SHOTS, '07-method.png'), fullPage: true });
-  await page.locator('header a.brand').click();
+  await page.locator('.topnav').getByRole('link', { name: 'מטופלים' }).click();
   await page.getByText('הסשן הבא:').waitFor();
 
   // patient screen
@@ -403,7 +435,8 @@ async function menu(page, label) {
   await mockSupabase(mp, db, log);
   mp.on('pageerror', (e) => errors.push(e.message));
   for (const [name, url, wait] of [
-    ['list', '/', 'דנה ל.'],
+    ['home', '/', 'מקום אחד למטופל,'],
+    ['list', '/patients', 'דנה ל.'],
     ['card', `/patients/${p.id}`, 'סשנים'],
     ['session', `/patients/${p.id}/sessions/${s.id}`, 'מה המטופל מביא היום?'],
     ['new', '/patients/new', 'מטופל חדש'],

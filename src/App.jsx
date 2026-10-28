@@ -13,6 +13,9 @@ import Session from './pages/Session';
 import NotFound from './pages/NotFound';
 import Method from './pages/Method';
 import Library from './pages/Library';
+import Home from './pages/Home';
+
+const OPEN = ['/', '/method'];
 
 export default function App() {
   const location = useLocation();
@@ -29,10 +32,11 @@ export default function App() {
             </Routes>
           </>
         ) : (
-          <AuthGate>
+          <AuthGate open={OPEN.includes(location.pathname)}>
             <AnimatePresence mode="wait">
               <Routes location={location} key={location.pathname}>
-                <Route path="/" element={<Patients />} />
+                <Route path="/" element={<Home />} />
+                <Route path="/patients" element={<Patients />} />
                 <Route path="/method" element={<Method />} />
                 <Route path="/library" element={<Library />} />
                 <Route path="/patients/new" element={<PatientForm />} />

@@ -75,7 +75,7 @@ export default function PatientCard() {
               try {
                 await deletePatient(id);
                 toast('המטופל נמחק.');
-                nav('/');
+                nav('/patients');
               } catch (e) {
                 toast(errText(e), 'error');
               }
@@ -150,7 +150,7 @@ export default function PatientCard() {
 
   return (
     <Page>
-      <Link className="crumb" to="/">
+      <Link className="crumb" to="/patients">
         חזרה לרשימה
       </Link>
       <div className={patient.enneagram_type ? 'hero-split' : ''}>
