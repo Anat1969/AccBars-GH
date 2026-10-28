@@ -16,6 +16,7 @@ const fade = { initial: { opacity: 0, y: 18 }, animate: { opacity: 1, y: 0 }, ex
 export default function AuthGate({ children }) {
   const [stage, setStage] = useState(configured ? 'loading' : 'unconfigured');
   const [session, setSession] = useState(null);
+  const [mfaOn, setMfaOn] = useState(false);
 
   const resolve = useCallback(async (s) => {
     setSession(s);
@@ -25,9 +26,15 @@ export default function AuthGate({ children }) {
       if (error) throw error;
       if (!allowed) return setStage('notAllowed');
       const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-      if (aal?.currentLevel === 'aal2') return setStage('ready');
+      if (aal?.currentLevel === 'aal2') {
+        setMfaOn(true);
+        return setStage('ready');
+      }
+      // the second factor is optional: asked for only once it was turned on
       const { data: f } = await supabase.auth.mfa.listFactors();
-      setStage(f?.totp?.some((x) => x.status === 'verified') ? 'challenge' : 'enroll');
+      const on = f?.totp?.some((x) => x.status === 'verified');
+      setMfaOn(Boolean(on));
+      setStage(on ? 'challenge' : 'ready');
     } catch {
       setStage('signedOut');
     }
@@ -57,7 +64,8 @@ export default function AuthGate({ children }) {
     setStage('signedOut');
   }, []);
 
-  const value = { stage, ready: stage === 'ready', session, signOut, resolve };
+  const enrollMfa = useCallback(() => setStage('enroll'), []);
+  const value = { stage, ready: stage === 'ready', session, signOut, resolve, mfaOn, enrollMfa };
 
   return (
     <Ctx.Provider value={value}>
@@ -72,7 +80,7 @@ export default function AuthGate({ children }) {
               {stage === 'unconfigured' && <Notice title="האפליקציה עוד לא מחוברת לשרת" text="חסרים משתני הסביבה של Supabase בפריסה." />}
               {stage === 'signedOut' && <SignIn onDone={resolve} />}
               {stage === 'recovery' && <NewPassword onDone={() => resolve(session)} />}
-              {stage === 'enroll' && <Enroll onDone={() => resolve(session)} onCancel={signOut} />}
+              {stage === 'enroll' && <Enroll onDone={() => resolve(session)} onCancel={() => setStage('ready')} />}
               {stage === 'challenge' && <Challenge onDone={() => resolve(session)} onCancel={signOut} />}
               {stage === 'notAllowed' && (
                 <Notice title="אין לחשבון הזה גישה" text="הכלי פתוח רק למטפלת שהוגדרה בו." action={{ label: 'יציאה', onClick: signOut }} />
@@ -124,6 +132,8 @@ function SignIn({ onDone }) {
   };
 
   return (
+    <div className="auth-split">
+      <AuthArt />
     <section className="card card-calm auth-card">
       <span className="label">כניסה</span>
       <h1 className="h-display">מקום שקט לעבודה</h1>
@@ -147,6 +157,49 @@ function SignIn({ onDone }) {
         </div>
       </form>
     </section>
+    </div>
+  );
+}
+
+/** The opening scene: a fiddlehead slowly opening, with a single point of light. */
+function AuthArt() {
+  const words = ['פתיחה', 'רישום', 'תובנה', 'תרגיל', 'סיכום', 'סשן הבא'];
+  const spiral = Array.from({ length: 90 }, (_, k) => {
+    const a = (k / 90) * Math.PI * 3.2;
+    const r = 120 - k * 1.25;
+    return `${k ? 'L' : 'M'}${(200 + Math.cos(a) * r).toFixed(1)} ${(210 + Math.sin(a) * r).toFixed(1)}`;
+  }).join(' ');
+  return (
+    <figure className="auth-art" aria-hidden="true">
+      <svg viewBox="0 0 400 440">
+        <defs>
+          <radialGradient id="aa-drop" cx="35%" cy="30%" r="70%">
+            <stop offset="0" stopColor="#fff" />
+            <stop offset="0.55" stopColor="#fdf6ec" />
+            <stop offset="1" stopColor="#d6b596" />
+          </radialGradient>
+          <radialGradient id="aa-halo" cx="50%" cy="50%" r="50%">
+            <stop offset="0" stopColor="#fff6ea" />
+            <stop offset="1" stopColor="#fff6ea" stopOpacity="0" />
+          </radialGradient>
+        </defs>
+        <circle cx="200" cy="210" r="170" fill="url(#aa-halo)" />
+        <motion.path d={`M200 440 C 190 380, 330 330, 320 210`} fill="none" stroke="var(--stem)" strokeWidth="5" strokeLinecap="round"
+          initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 2.4, ease: 'easeInOut' }} />
+        <motion.path d={spiral} fill="none" stroke="var(--stem)" strokeWidth="4" strokeLinecap="round" transform="translate(200 210) scale(0.92) translate(-200 -210)"
+          initial={{ pathLength: 0 }} animate={{ pathLength: [0, 1, 0.82, 1] }} transition={{ duration: 9, times: [0, 0.35, 0.7, 1], ease: 'easeInOut', delay: 1 }} />
+        {words.map((w, i) => {
+          const a = (i / words.length) * Math.PI * 2 - Math.PI / 2;
+          return (
+            <motion.text key={w} x={200 + Math.cos(a) * 168} y={214 + Math.sin(a) * 168} textAnchor="middle" className="aa-word"
+              initial={{ opacity: 0 }} animate={{ opacity: [0, 1, 0.55] }} transition={{ duration: 3, delay: 1.6 + i * 0.4 }}>
+              {w}
+            </motion.text>
+          );
+        })}
+        <motion.circle cx="200" cy="210" fill="url(#aa-drop)" initial={{ r: 0 }} animate={{ r: [0, 16, 13, 16] }} transition={{ duration: 6, delay: 2, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' }} />
+      </svg>
+    </figure>
   );
 }
 
@@ -231,7 +284,7 @@ function Enroll({ onDone, onCancel }) {
 
   return (
     <section className="card card-calm auth-card">
-      <span className="label">אימות דו־שלבי, פעם אחת</span>
+      <span className="label">אימות דו־שלבי, לבחירתך</span>
       <h1 className="h-display">שכבת הגנה נוספת</h1>
       <p className="quiet">המידע כאן רגיש. סרקי את הקוד באפליקציית אימות (כמו Google Authenticator), וכתבי את שש הספרות שמופיעות בה.</p>
       {factor ? (
@@ -248,7 +301,7 @@ function Enroll({ onDone, onCancel }) {
                 אישור
               </button>
               <button type="button" className="btn btn-link" onClick={onCancel}>
-                יציאה
+                לא עכשיו
               </button>
             </div>
           </form>

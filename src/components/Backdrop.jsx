@@ -25,6 +25,12 @@ function Frond({ drops = true }) {
   );
 }
 
+// A few drops of light drifting very slowly upward; positions are fixed so the scene is calm and repeatable.
+const DROPS = Array.from({ length: 18 }, (_, i) => {
+  const r = (k) => ((Math.sin(i * 9301 + k * 49297) + 1) / 2);
+  return { x: 4 + r(1) * 92, y: 10 + r(2) * 85, s: 3 + r(3) * 7, d: 38 + r(4) * 40, delay: r(5) * 60, dx: (r(6) - 0.5) * 60 };
+});
+
 export default function Backdrop() {
   const still = useReducedMotion();
   const mx = useMotionValue(0);
@@ -70,6 +76,11 @@ export default function Backdrop() {
           <Frond />
         </motion.svg>
       </motion.div>
+      <div className="dew-field">
+        {DROPS.map((d, i) => (
+          <span key={i} className="dew-drift" style={{ '--x': `${d.x}%`, '--y': `${d.y}%`, '--s': `${d.s}px`, '--d': `${d.d}s`, '--delay': `${-d.delay}s`, '--dx': `${d.dx}px` }} />
+        ))}
+      </div>
       <div className="grain" />
     </div>
   );

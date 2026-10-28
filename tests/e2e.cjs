@@ -30,7 +30,7 @@ const sessionFor = (aal) => ({
 
 function makeDb() {
   const uid = () => crypto.randomUUID();
-  return { accbars_patients: [], accbars_goals: [], accbars_sessions: [], accbars_exercises: [], uid };
+  return { accbars_patients: [], accbars_goals: [], accbars_sessions: [], accbars_exercises: [], accbars_library: [], uid };
 }
 
 async function mockSupabase(page, db, log) {
@@ -134,16 +134,25 @@ async function menu(page, label) {
     await page.getByLabel('סיסמה').fill('long-password-1');
     await page.getByRole('button', { name: 'שחזור סיסמה' }).click();
     ok(log.some((l) => l.path === '/auth/v1/recover'), 'password recovery request sent');
+    await page.waitForTimeout(2500);
+    await page.screenshot({ path: path.join(SHOTS, '00-signin.png') });
     await page.getByRole('button', { name: 'כניסה' }).click();
-    await page.getByText('שכבת הגנה נוספת').waitFor();
+    await page.getByText('אין עדיין מטופלים.').waitFor();
     ok(log.some((l) => l.path === '/auth/v1/token' && l.search.includes('grant_type=password')), 'password sign-in request sent');
+    ok(true, 'password alone opens the app, no forced second factor');
+    // the second factor is optional, from the A&I menu
+    await menu(page, 'הפעלת אימות דו־שלבי');
+    await page.getByText('שכבת הגנה נוספת').waitFor();
     await page.locator('.qr svg').waitFor();
     ok(!(await page.locator('.qr').innerText()).includes('data:'), 'TOTP QR code shown as an image');
+    await page.getByRole('button', { name: 'לא עכשיו' }).click();
+    await page.getByText('אין עדיין מטופלים.').waitFor();
+    ok(true, 'second factor can be skipped');
+    await menu(page, 'הפעלת אימות דו־שלבי');
     await page.getByLabel('קוד בן שש ספרות').fill('123456');
     await page.getByRole('button', { name: 'אישור' }).click();
     await page.getByText('אין עדיין מטופלים.').waitFor();
     ok(log.some((l) => l.path.endsWith('/verify') && l.body.code === '123456'), 'TOTP verify request sent with the code');
-    ok(true, 'empty patient list text shown');
     await page.screenshot({ path: path.join(SHOTS, '01-empty.png'), fullPage: true });
     await ctx.close();
   }
@@ -227,10 +236,22 @@ async function menu(page, label) {
   await page.locator('textarea.big-text').fill('הלחץ מתחיל לפני הישיבה.');
   await page.getByRole('button', { name: 'הבא', exact: true }).click();
   await page.getByText('תרגיל אחד, קטן וברור, לשבוע הקרוב.').waitFor();
+  // suggestions follow the patient's type (6)
+  await page.getByText('הצעות לטיפוס 6, הנאמן').waitFor();
+  ok(await page.locator('.suggestions .practice').count() === 3, 'three suggestions for the type');
+  await page.locator('.suggestions .practice-front').first().click();
+  await page.waitForTimeout(1200);
+  await page.locator('.suggestions').getByRole('button', { name: 'לתרגיל של השבוע' }).first().click();
+  ok((await page.locator('textarea.big-text').inputValue()).startsWith('קרקע'), 'the insight ("לחץ") leads the suggestions, and choosing one fills the exercise');
+  await page.getByRole('button', { name: 'הבא', exact: true }).click();
+  await page.getByText('מה המטופל לוקח איתו, במשפט אחד.').waitFor();
+  ok(db.accbars_exercises[0]?.library_key === '6-ground', 'exercise keeps its library source');
+  await page.getByRole('button', { name: 'הקודם' }).click();
+  await page.getByText('תרגיל אחד, קטן וברור, לשבוע הקרוב.').waitFor();
   await page.locator('textarea.big-text').fill('שלוש שורות בבוקר לפני המייל.');
   await page.getByRole('button', { name: 'הבא', exact: true }).click();
   await page.getByText('מה המטופל לוקח איתו, במשפט אחד.').waitFor();
-  ok(db.accbars_exercises.length === 1 && db.accbars_exercises[0].description === 'שלוש שורות בבוקר לפני המייל.', 'exercise saved when leaving the step');
+  ok(db.accbars_exercises.length === 1 && db.accbars_exercises[0].description === 'שלוש שורות בבוקר לפני המייל.' && !db.accbars_exercises[0].library_key, 'typed exercise replaces the suggestion');
   await page.getByRole('button', { name: 'הבא', exact: true }).click();
   // finish without summary jumps back
   await page.getByLabel('נקודה פתוחה לסשן הבא').fill('האם התרגיל של שלוש השורות נשמר');
@@ -292,6 +313,45 @@ async function menu(page, label) {
   ok(await page.locator('.patient-row').count() === 1, 'search by name');
   await page.screenshot({ path: path.join(SHOTS, '05-list.png'), fullPage: true });
 
+  // library
+  await page.getByRole('link', { name: 'ספרייה' }).click();
+  await page.getByText('תרגיל, משחק,').waitFor();
+  const total = await page.locator('.practice').count();
+  ok(total === 40, `library shows every built-in item (${total})`);
+  await page.locator('.filters').getByRole('button', { name: 'משחק' }).click();
+  await page.waitForTimeout(600);
+  ok(await page.locator('.practice').count() === 10, 'kind filter keeps the games');
+  ok(page.url().includes('kind='), 'filter is in the link');
+  await page.locator('.library-wheel .en-point[aria-label="8, המאתגר"] circle').last().click();
+  await page.waitForTimeout(800);
+  ok(await page.locator('.practice').count() === 2, 'type filter: the type game and the shared one');
+  await page.locator('.practice-front').first().click();
+  await page.waitForTimeout(1300);
+  ok(await page.locator('.practice-back').first().getByText('חזרה').isVisible(), 'card turns over to its steps');
+  await page.locator('.filters').getByRole('button', { name: 'הכול' }).click();
+  await page.getByRole('button', { name: 'כל הטיפוסים' }).click();
+  await page.getByLabel('חיפוש').fill('קרקע');
+  await page.waitForTimeout(600);
+  ok(await page.locator('.practice').count() === 1, 'library search');
+  await page.getByLabel('חיפוש').fill('');
+  await menu(page, 'תרגיל חדש לספרייה');
+  await page.getByLabel('כותרת').fill('הליכה שקטה');
+  await page.locator('.sheet').getByRole('button', { name: '6, הנאמן' }).click();
+  await page.getByLabel('שלבים, שלב בכל שורה').fill('ללכת לאט\nלספור צעדים');
+  await page.getByRole('button', { name: 'הוספה לספרייה' }).click();
+  await page.getByText('נוסף לספרייה.').waitFor();
+  ok(db.accbars_library.length === 1 && db.accbars_library[0].steps.length === 2 && db.accbars_library[0].types[0] === 6, 'own item saved');
+  await page.locator('.practice-title', { hasText: 'הליכה שקטה' }).waitFor();
+  await page.waitForTimeout(1200);
+  await page.screenshot({ path: path.join(SHOTS, '09-library.png') });
+  await menu(page, 'מצב עריכה');
+  await page.locator('.practice-front', { hasText: 'הליכה שקטה' }).click();
+  await page.waitForTimeout(1200);
+  await page.locator('.practice-back').first().getByRole('button', { name: 'מחיקה' }).click();
+  await page.waitForTimeout(800);
+  ok(db.accbars_library.length === 0, 'own item deleted in edit mode');
+  await menu(page, 'סיום עריכה');
+
   // method map
   await page.getByRole('link', { name: 'השיטה' }).click();
   await page.getByText('מחזור הסשן').waitFor();
@@ -348,6 +408,7 @@ async function menu(page, label) {
     ['session', `/patients/${p.id}/sessions/${s.id}`, 'מה המטופל מביא היום?'],
     ['new', '/patients/new', 'מטופל חדש'],
     ['method', '/method', 'מחזור הסשן'],
+    ['library', '/library', 'תרגיל, משחק,'],
     ['patient', `/p/${'b'.repeat(36)}`, 'שלום דנה'],
   ]) {
     await mp.goto(BASE + url);

@@ -12,6 +12,7 @@ import PatientView from './pages/PatientView';
 import Session from './pages/Session';
 import NotFound from './pages/NotFound';
 import Method from './pages/Method';
+import Library from './pages/Library';
 
 export default function App() {
   const location = useLocation();
@@ -33,6 +34,7 @@ export default function App() {
               <Routes location={location} key={location.pathname}>
                 <Route path="/" element={<Patients />} />
                 <Route path="/method" element={<Method />} />
+                <Route path="/library" element={<Library />} />
                 <Route path="/patients/new" element={<PatientForm />} />
                 <Route path="/patients/:id" element={<PatientCard />} />
                 <Route path="/patients/:id/edit" element={<PatientForm />} />

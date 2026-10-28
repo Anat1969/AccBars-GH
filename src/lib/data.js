@@ -35,3 +35,8 @@ export const patientView = async (token) => {
   const rows = await q(supabase.rpc('accbars_patient_view', { p_token: token }));
   return rows?.[0] ?? null;
 };
+
+const L = 'accbars_library';
+export const listLibrary = async () => (await q(supabase.from(L).select('*').order('created_at', { ascending: false }))).map((x) => ({ ...x, key: `own-${x.id}`, own: true }));
+export const addLibraryItem = (row) => q(supabase.from(L).insert(row));
+export const deleteLibraryItem = (id) => q(supabase.from(L).delete().eq('id', id));
